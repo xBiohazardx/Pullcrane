@@ -120,13 +120,39 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     return max(0, handRemainingRest[hand] ?? 0);
   }
 
+  int _maxLiftForHand(Exercise exercise, ExerciseHand hand) {
+    return hand == ExerciseHand.left
+        ? exercise.maxLiftLeftKg
+        : exercise.maxLiftRightKg;
+  }
+
+  int _effectiveExerciseMaxLiftKg(Exercise exercise) {
+    final ExerciseHand primaryHand = exercise.isSideSwitching
+        ? (activeHand ?? exercise.startingHand)
+        : exercise.startingHand;
+    final ExerciseHand secondaryHand = _oppositeHand(primaryHand);
+
+    final int primaryMaxLift = _maxLiftForHand(exercise, primaryHand);
+    if (primaryMaxLift > 0) {
+      return primaryMaxLift;
+    }
+
+    final int secondaryMaxLift = _maxLiftForHand(exercise, secondaryHand);
+    if (secondaryMaxLift > 0) {
+      return secondaryMaxLift;
+    }
+
+    return widget.userMaxLiftKg;
+  }
+
   int _resolveTargetForceKg(Exercise? exercise) {
     if (exercise == null) {
       return widget.forceThresholdKg;
     }
     if (exercise.targetForceMode == TargetForceMode.relativePercent) {
+      final int effectiveMaxLift = _effectiveExerciseMaxLiftKg(exercise);
       final double relativeKg =
-          (widget.userMaxLiftKg * exercise.targetForceValue) / 100;
+          (effectiveMaxLift * exercise.targetForceValue) / 100;
       return relativeKg.round().clamp(minForceKg, maxForceKg);
     }
     return exercise.targetForceValue.round().clamp(minForceKg, maxForceKg);
@@ -148,8 +174,9 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       return '${widget.forceThresholdKg} kg';
     }
     if (exercise.targetForceMode == TargetForceMode.relativePercent) {
-      final String percent = exercise.targetForceValue
-          .toStringAsFixed(exercise.targetForceValue % 1 == 0 ? 0 : 1);
+      final String percent = exercise.targetForceValue.toStringAsFixed(
+        exercise.targetForceValue % 1 == 0 ? 0 : 1,
+      );
       return '$percent% (~${_resolveTargetForceKg(exercise)}kg)';
     }
     return '${exercise.targetForceValue.toStringAsFixed(exercise.targetForceValue % 1 == 0 ? 0 : 1)}kg';
@@ -280,8 +307,9 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         suggestedSwitchHand = null;
         activeHand = null;
         pendingHandInSet = null;
-        setStartArmed =
-            widget.requireZeroBeforeSetStart ? currentForce == 0 : true;
+        setStartArmed = widget.requireZeroBeforeSetStart
+            ? currentForce == 0
+            : true;
       });
       return;
     }
@@ -297,8 +325,9 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       remainingSetSeconds = exercise.durationSeconds ?? 0;
       phase = SessionPhase.waitingForForce;
       suggestedSwitchHand = null;
-      setStartArmed =
-          widget.requireZeroBeforeSetStart ? currentForce == 0 : true;
+      setStartArmed = widget.requireZeroBeforeSetStart
+          ? currentForce == 0
+          : true;
       _syncTargetFeedback(currentForce);
     });
   }
@@ -375,15 +404,17 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
 
     final WorkoutExerciseEntry? entry = currentEntry;
     final Exercise? exercise = currentExercise;
-    final ExerciseHand? completedHand =
-        exercise?.isSideSwitching == true ? activeHand : null;
+    final ExerciseHand? completedHand = exercise?.isSideSwitching == true
+        ? activeHand
+        : null;
 
     if (entry == null || exercise == null) {
       _goToNextSetOrEntry();
       return;
     }
 
-    final int restSeconds = entry.restOverrideSeconds ?? exercise.defaultRestSeconds;
+    final int restSeconds =
+        entry.restOverrideSeconds ?? exercise.defaultRestSeconds;
     if (completedHand != null) {
       handRemainingRest[completedHand] = restSeconds;
     }
@@ -394,7 +425,10 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       completedHand: completedHand,
     );
 
-    if (!_hasMoreWorkAfterCurrentCompletion(entry: entry, switchTarget: switchTarget)) {
+    if (!_hasMoreWorkAfterCurrentCompletion(
+      entry: entry,
+      switchTarget: switchTarget,
+    )) {
       _goToNextSetOrEntry();
       return;
     }
@@ -439,7 +473,9 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     final WorkoutExerciseEntry? entry = currentEntry;
     final Exercise? exercise = currentExercise;
 
-    if (exercise != null && exercise.isSideSwitching && pendingHandInSet != null) {
+    if (exercise != null &&
+        exercise.isSideSwitching &&
+        pendingHandInSet != null) {
       setState(() {
         activeHand = pendingHandInSet;
         pendingHandInSet = null;
@@ -495,9 +531,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     final int targetMaxForce = _targetMaxForceKg(exercise);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Active: ${widget.workout.name}'),
-      ),
+      appBar: AppBar(title: Text('Active: ${widget.workout.name}')),
       body: ForceInputDummy(
         sensitivity: dummySensitivity,
         minForce: minForceKg,
@@ -516,16 +550,10 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
               ),
               const SizedBox(height: 16),
               if (phase == SessionPhase.finished)
-                const Expanded(
-                  child: Center(
-                    child: Text('Workout complete.'),
-                  ),
-                )
+                const Expanded(child: Center(child: Text('Workout complete.')))
               else if (entry == null)
                 const Expanded(
-                  child: Center(
-                    child: Text('No entries in this workout.'),
-                  ),
+                  child: Center(child: Text('No entries in this workout.')),
                 )
               else
                 Expanded(
@@ -535,68 +563,73 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Entry ${currentEntryIndex + 1}/${widget.workout.entries.length}'),
-                          const SizedBox(height: 8),
-                          Text(
-                            exercise?.name ?? 'Missing exercise reference',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 8),
-                          Text('Set $currentSet/${entry.sets}'),
-                          if (activeHandForUi != null) ...[
-                            const SizedBox(height: 4),
-                            Text('Active hand: ${_handLabel(activeHandForUi)}'),
-                          ],
-                          if (exercise != null) ...[
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Entry ${currentEntryIndex + 1}/${widget.workout.entries.length}',
+                            ),
                             const SizedBox(height: 8),
                             Text(
-                              exercise.mode == ExerciseMode.duration
-                                  ? 'Hold ${exercise.durationSeconds ?? 0}s'
-                                  : '${exercise.reps ?? 0} reps',
+                              exercise?.name ?? 'Missing exercise reference',
+                              style: Theme.of(context).textTheme.titleLarge,
                             ),
+                            const SizedBox(height: 8),
+                            Text('Set $currentSet/${entry.sets}'),
+                            if (activeHandForUi != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Active hand: ${_handLabel(activeHandForUi)}',
+                              ),
+                            ],
+                            if (exercise != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                exercise.mode == ExerciseMode.duration
+                                    ? 'Hold ${exercise.durationSeconds ?? 0}s'
+                                    : '${exercise.reps ?? 0} reps',
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            Expanded(
+                              child: ForceChart(
+                                dataPoints: dataPoints,
+                                chartMaxForce: maxForceKg,
+                                targetMinForce: targetMinForce,
+                                targetMaxForce: targetMaxForce,
+                                showTargetArea: phase != SessionPhase.resting,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            if (phase == SessionPhase.waitingForForce)
+                              Text(
+                                setStartArmed
+                                    ? 'Apply at least ${widget.forceThresholdKg} kg to start the set.'
+                                    : 'Release to 0 kg first, then apply at least ${widget.forceThresholdKg} kg to start.',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            if (exercise != null)
+                              Text(
+                                'Target zone: $targetMinForce-$targetMaxForce kg (hys ${widget.targetHysteresisKg}kg)',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            if (phase == SessionPhase.activeSet &&
+                                exercise?.mode == ExerciseMode.duration)
+                              Text(
+                                'Remaining hold: $remainingSetSeconds s',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                            if (phase == SessionPhase.resting)
+                              Text(
+                                'Rest: $remainingRestSeconds s',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                            if (phase == SessionPhase.resting &&
+                                suggestedSwitchHand != null)
+                              Text(
+                                'Preparing ${_handLabel(suggestedSwitchHand!)} hand...',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
                           ],
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: ForceChart(
-                              dataPoints: dataPoints,
-                              chartMaxForce: maxForceKg,
-                              targetMinForce: targetMinForce,
-                              targetMaxForce: targetMaxForce,
-                              showTargetArea: phase != SessionPhase.resting,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          if (phase == SessionPhase.waitingForForce)
-                            Text(
-                              setStartArmed
-                                  ? 'Apply at least ${widget.forceThresholdKg} kg to start the set.'
-                                  : 'Release to 0 kg first, then apply at least ${widget.forceThresholdKg} kg to start.',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          if (exercise != null)
-                            Text(
-                              'Target zone: $targetMinForce-$targetMaxForce kg',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          if (phase == SessionPhase.activeSet &&
-                              exercise?.mode == ExerciseMode.duration)
-                            Text(
-                              'Remaining hold: $remainingSetSeconds s',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          if (phase == SessionPhase.resting)
-                            Text(
-                              'Rest: $remainingRestSeconds s',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          if (phase == SessionPhase.resting && suggestedSwitchHand != null)
-                            Text(
-                              'Preparing ${_handLabel(suggestedSwitchHand!)} hand...',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                        ],
                         ),
                       ),
                     ),
@@ -622,7 +655,9 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                   else if (phase == SessionPhase.resting)
                     Expanded(
                       child: FilledButton.tonal(
-                        onPressed: suggestedSwitchHand == null ? _goToNextSetOrEntry : null,
+                        onPressed: suggestedSwitchHand == null
+                            ? _goToNextSetOrEntry
+                            : null,
                         child: Text(
                           suggestedSwitchHand == null
                               ? 'Skip Rest'
@@ -652,13 +687,3 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     );
   }
 }
-
-
-
-
-
-
-
-
-
-

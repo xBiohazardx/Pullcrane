@@ -17,6 +17,8 @@ class Exercise {
     this.targetForceValue = 10,
     this.isSideSwitching = false,
     this.startingHand = ExerciseHand.left,
+    this.maxLiftLeftKg = 0,
+    this.maxLiftRightKg = 0,
     this.isDefault = false,
   });
 
@@ -31,6 +33,8 @@ class Exercise {
   final double targetForceValue;
   final bool isSideSwitching;
   final ExerciseHand startingHand;
+  final int maxLiftLeftKg;
+  final int maxLiftRightKg;
   final bool isDefault;
 
   Exercise copyWith({
@@ -45,6 +49,8 @@ class Exercise {
     double? targetForceValue,
     bool? isSideSwitching,
     ExerciseHand? startingHand,
+    int? maxLiftLeftKg,
+    int? maxLiftRightKg,
     bool? isDefault,
   }) {
     return Exercise(
@@ -59,6 +65,8 @@ class Exercise {
       targetForceValue: targetForceValue ?? this.targetForceValue,
       isSideSwitching: isSideSwitching ?? this.isSideSwitching,
       startingHand: startingHand ?? this.startingHand,
+      maxLiftLeftKg: maxLiftLeftKg ?? this.maxLiftLeftKg,
+      maxLiftRightKg: maxLiftRightKg ?? this.maxLiftRightKg,
       isDefault: isDefault ?? this.isDefault,
     );
   }
@@ -76,6 +84,8 @@ class Exercise {
       'targetForceValue': targetForceValue,
       'isSideSwitching': isSideSwitching,
       'startingHand': startingHand.name,
+      'maxLiftLeftKg': maxLiftLeftKg,
+      'maxLiftRightKg': maxLiftRightKg,
       'isDefault': isDefault,
     };
   }
@@ -97,8 +107,9 @@ class Exercise {
       startingHand: json['startingHand'] != null
           ? ExerciseHand.values.byName(json['startingHand'] as String)
           : ExerciseHand.left,
+      maxLiftLeftKg: (json['maxLiftLeftKg'] as num?)?.round() ?? 0,
+      maxLiftRightKg: (json['maxLiftRightKg'] as num?)?.round() ?? 0,
       isDefault: json['isDefault'] as bool? ?? false,
     );
   }
 }
-

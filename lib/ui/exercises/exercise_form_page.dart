@@ -33,12 +33,16 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
     isSideSwitching = initial?.isSideSwitching ?? false;
     startingHand = initial?.startingHand ?? ExerciseHand.left;
     nameController = TextEditingController(text: initial?.name ?? '');
-    descriptionController = TextEditingController(text: initial?.description ?? '');
+    descriptionController = TextEditingController(
+      text: initial?.description ?? '',
+    );
     repsController = TextEditingController(
       text: initial?.reps != null ? initial!.reps.toString() : '8',
     );
     durationController = TextEditingController(
-      text: initial?.durationSeconds != null ? initial!.durationSeconds.toString() : '30',
+      text: initial?.durationSeconds != null
+          ? initial!.durationSeconds.toString()
+          : '30',
     );
     restController = TextEditingController(
       text: (initial?.defaultRestSeconds ?? 60).toString(),
@@ -66,10 +70,14 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
       return;
     }
 
-    final String id = widget.initialExercise?.id ?? DateTime.now().microsecondsSinceEpoch.toString();
+    final String id =
+        widget.initialExercise?.id ??
+        DateTime.now().microsecondsSinceEpoch.toString();
     final int defaultRest = int.parse(restController.text.trim());
     final double targetForce = double.parse(targetForceController.text.trim());
-    final int? reps = mode == ExerciseMode.reps ? int.parse(repsController.text.trim()) : null;
+    final int? reps = mode == ExerciseMode.reps
+        ? int.parse(repsController.text.trim())
+        : null;
     final int? duration = mode == ExerciseMode.duration
         ? int.parse(durationController.text.trim())
         : null;
@@ -86,6 +94,8 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
       targetForceValue: targetForce,
       isSideSwitching: isSideSwitching,
       startingHand: startingHand,
+      maxLiftLeftKg: widget.initialExercise?.maxLiftLeftKg ?? 0,
+      maxLiftRightKg: widget.initialExercise?.maxLiftRightKg ?? 0,
       isDefault: widget.initialExercise?.isDefault ?? false,
     );
 
@@ -176,7 +186,9 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
                     ? 'Target force (kg)'
                     : 'Target force (% of max lift)',
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               validator: (value) {
                 final double? parsed = double.tryParse(value ?? '');
                 if (parsed == null) {
@@ -199,7 +211,9 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
               value: isSideSwitching,
               contentPadding: EdgeInsets.zero,
               title: const Text('Alternate hands each set'),
-              subtitle: const Text('App guides hand switching and rest carryover.'),
+              subtitle: const Text(
+                'App guides hand switching and rest carryover.',
+              ),
               onChanged: (value) {
                 setState(() {
                   isSideSwitching = value;
@@ -246,7 +260,9 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
             else
               TextFormField(
                 controller: durationController,
-                decoration: const InputDecoration(labelText: 'Duration (seconds)'),
+                decoration: const InputDecoration(
+                  labelText: 'Duration (seconds)',
+                ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
                   final int? parsed = int.tryParse(value ?? '');
@@ -259,7 +275,9 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
             const SizedBox(height: 12),
             TextFormField(
               controller: restController,
-              decoration: const InputDecoration(labelText: 'Default rest (seconds)'),
+              decoration: const InputDecoration(
+                labelText: 'Default rest (seconds)',
+              ),
               keyboardType: TextInputType.number,
               validator: (value) {
                 final int? parsed = int.tryParse(value ?? '');
@@ -270,15 +288,10 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
               },
             ),
             const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _submit,
-              child: const Text('Save'),
-            ),
+            FilledButton(onPressed: _submit, child: const Text('Save')),
           ],
         ),
       ),
     );
   }
 }
-
-

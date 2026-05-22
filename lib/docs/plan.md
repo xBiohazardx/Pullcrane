@@ -2,14 +2,14 @@
 
 ## Confirmed decisions
 
-- Navigation tabs (order): Home, Workouts, Exercises, Settings.
+- Navigation tabs (order): Home, Workouts, Exercises, Benchmark, Settings.
 - Data: local only, no cloud sync.
 - Exercise type: exactly one mode per exercise (reps or duration).
 - Rest handling: exercise has default rest; workout entry can override it.
 - Include a default "Rest" exercise template.
 - Exercises must define a target force.
 - Target force supports two modes: absolute kg or relative (% of user max lift).
-- User max lift is hardcoded for now (temporary placeholder until max-lift flow is implemented).
+- Max lift is measured per exercise (left/right hand where applicable).
 - Force trigger: start only above a configurable threshold.
 - Threshold default: 10kg (from settings).
 - If force drops during a timed set: timer continues.
@@ -42,9 +42,10 @@
 
 ### Phase 4 - Max lift measurement page
 
-- Add a dedicated page to measure user max lift.
-- Add flow to start/record/update user max lift.
-- For now keep max lift hardcoded in execution logic until this phase is fully wired to storage/settings.
+- Add a benchmark tab with list of all benchmarkable exercises.
+- Open per-exercise max-lift measurement screen from benchmark list.
+- Measure current and max force with one bar (single-hand) or two bars (left/right hand).
+- Save measured value(s) back to the selected exercise.
 
 ### Phase 5 - Execution engine
 
