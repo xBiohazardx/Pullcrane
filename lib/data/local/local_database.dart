@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqflite/sqflite.dart' as sqflite;
 import 'package:sqflite_common/sqlite_api.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -18,16 +19,27 @@ class LocalDatabase {
   static const int _dbVersion = 1;
 
   Database? _database;
-  DatabaseFactory? _factory;
 
   Future<Database> get database async {
     if (_database != null) {
       return _database!;
     }
 
-    _factory ??= _createDatabaseFactory();
-    final String path = await _resolveDatabasePath(_factory!);
-    _database = await _factory!.openDatabase(
+    if (_usesSqflitePlugin) {
+      final String path = await _resolveMobileDatabasePath();
+      _database = await sqflite.openDatabase(
+        path,
+        version: _dbVersion,
+        onCreate: (sqflite.Database db, int version) async {
+          await _createSchema(db);
+        },
+      );
+      return _database!;
+    }
+
+    final DatabaseFactory factory = _createFfiDatabaseFactory();
+    final String path = await _resolveFfiDatabasePath(factory);
+    _database = await factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
         version: _dbVersion,
@@ -43,7 +55,14 @@ class LocalDatabase {
     await database;
   }
 
-  DatabaseFactory _createDatabaseFactory() {
+  bool get _usesSqflitePlugin {
+    if (kIsWeb) {
+      return false;
+    }
+    return Platform.isAndroid || Platform.isIOS;
+  }
+
+  DatabaseFactory _createFfiDatabaseFactory() {
     if (kIsWeb) {
       throw UnsupportedError('SQLite storage is not supported on web.');
     }
@@ -52,7 +71,12 @@ class LocalDatabase {
     return databaseFactoryFfi;
   }
 
-  Future<String> _resolveDatabasePath(DatabaseFactory factory) async {
+  Future<String> _resolveMobileDatabasePath() async {
+    final String databasesPath = await sqflite.getDatabasesPath();
+    return p.join(databasesPath, _dbName);
+  }
+
+  Future<String> _resolveFfiDatabasePath(DatabaseFactory factory) async {
     if (_isTestEnvironment) {
       return inMemoryDatabasePath;
     }

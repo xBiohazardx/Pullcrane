@@ -5,12 +5,27 @@ import 'package:pullcrane/ui/app_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AppRepositories.init();
-  runApp(const MyApp());
+  Object? startupError;
+  StackTrace? startupStackTrace;
+  try {
+    await AppRepositories.init();
+  } catch (error, stackTrace) {
+    startupError = error;
+    startupStackTrace = stackTrace;
+    debugPrint('Startup initialization failed: $error');
+    debugPrint('$stackTrace');
+  }
+  runApp(MyApp(
+    startupError: startupError,
+    startupStackTrace: startupStackTrace,
+  ));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.startupError, this.startupStackTrace});
+
+  final Object? startupError;
+  final StackTrace? startupStackTrace;
 
   // This widget is the root of your application.
   @override
@@ -37,10 +52,35 @@ class MyApp extends StatelessWidget {
             colorScheme: darkDynamic ?? fallbackDark,
           ),
           themeMode: ThemeMode.system,
-          home: const AppShell(),
+          home: startupError == null
+              ? const AppShell()
+              : _StartupErrorPage(
+                  error: startupError!,
+                  stackTrace: startupStackTrace,
+                ),
           debugShowCheckedModeBanner: false,
         );
       },
+    );
+  }
+}
+
+class _StartupErrorPage extends StatelessWidget {
+  const _StartupErrorPage({required this.error, required this.stackTrace});
+
+  final Object error;
+  final StackTrace? stackTrace;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Startup Error')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: SelectableText(
+          'Failed to initialize app storage.\n\n$error\n\n${stackTrace ?? ''}',
+        ),
+      ),
     );
   }
 }

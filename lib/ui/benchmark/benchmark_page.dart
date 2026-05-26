@@ -21,8 +21,7 @@ class _BenchmarkPageState extends State<BenchmarkPage> {
   }
 
   Future<void> _reload() async {
-    final List<Exercise> loaded = await AppRepositories.exercises
-        .listExercises();
+    final List<Exercise> loaded = await AppRepositories.exercises.listExercises();
     if (!mounted) {
       return;
     }
@@ -33,6 +32,9 @@ class _BenchmarkPageState extends State<BenchmarkPage> {
   }
 
   String _benchmarkInfo(Exercise exercise) {
+    if (!exercise.isSideSwitching) {
+      return 'Max lift: ${exercise.maxLiftLeftKg}kg';
+    }
     return 'L ${exercise.maxLiftLeftKg}kg  •  R ${exercise.maxLiftRightKg}kg';
   }
 
@@ -61,24 +63,28 @@ class _BenchmarkPageState extends State<BenchmarkPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Benchmark')),
+      appBar: AppBar(
+        title: const Text('Benchmark'),
+      ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : exercises.isEmpty
-          ? const Center(child: Text('No exercises available for benchmark.'))
-          : ListView.separated(
-              itemCount: exercises.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final Exercise exercise = exercises[index];
-                return ListTile(
-                  title: Text(exercise.name),
-                  subtitle: Text(_benchmarkInfo(exercise)),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _openBenchmark(exercise),
-                );
-              },
-            ),
+              ? const Center(child: Text('No exercises available for benchmark.'))
+              : ListView.separated(
+                  itemCount: exercises.length,
+                  separatorBuilder: (context, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final Exercise exercise = exercises[index];
+                    return ListTile(
+                      title: Text(exercise.name),
+                      subtitle: Text(_benchmarkInfo(exercise)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openBenchmark(exercise),
+                    );
+                  },
+                ),
     );
   }
 }
+
+

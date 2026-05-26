@@ -68,7 +68,10 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
         title: const Text('Workouts'),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _openForm(),
+        onPressed: () async {
+          await _reload();
+          _openForm();
+        },
         child: const Icon(Icons.add),
       ),
       body: isLoading

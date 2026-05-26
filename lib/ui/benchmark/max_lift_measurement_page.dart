@@ -80,82 +80,75 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
     required int currentForceKg,
     required int maxForceRecordedKg,
     required bool isActive,
-    required VoidCallback onTap,
   }) {
     final ColorScheme colors = Theme.of(context).colorScheme;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Card(
-        shape: RoundedRectangleBorder(
-          side: BorderSide(
-            color: isActive ? colors.primary : colors.outlineVariant,
-          ),
-          borderRadius: BorderRadius.circular(12),
+    return Card(
+      shape: RoundedRectangleBorder(
+        side: BorderSide(
+          color: isActive ? colors.primary : colors.outlineVariant,
         ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-          child: Column(
-            children: [
-              Text(label, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 220,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        child: Column(
+          children: [
+            Text(label, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 220,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
                   final double barHeight = constraints.maxHeight;
-                  final double currentRatio = (currentForceKg / maxForceKg)
-                      .clamp(0, 1)
-                      .toDouble();
-                  final double maxRatio = (maxForceRecordedKg / maxForceKg)
-                      .clamp(0, 1)
-                      .toDouble();
+                  final double currentRatio =
+                      (currentForceKg / maxForceKg).clamp(0, 1).toDouble();
+                  final double maxRatio =
+                      (maxForceRecordedKg / maxForceKg).clamp(0, 1).toDouble();
                   final double currentHeight = barHeight * currentRatio;
-                  final double maxLineBottom = ((barHeight * maxRatio) - 1)
-                      .clamp(0, barHeight - 2)
-                      .toDouble();
+                  final double maxLineBottom =
+                      ((barHeight * maxRatio) - 1).clamp(0, barHeight - 2).toDouble();
 
-                    return Stack(
-                      children: [
-                        Positioned.fill(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: colors.surfaceContainerHighest.withValues(
-                                alpha: 0.35,
-                              ),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                  return Stack(
+                    children: [
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: colors.surfaceContainerHighest.withValues(alpha: 0.35),
+                            borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 90),
-                            height: currentHeight,
-                            decoration: BoxDecoration(
-                              color: colors.primary.withValues(alpha: 0.8),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 90),
+                          height: currentHeight,
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: 0.8),
+                            borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: maxLineBottom,
-                          child: Container(height: 2, color: colors.tertiary),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: maxLineBottom,
+                        child: Container(
+                          height: 2,
+                          color: colors.tertiary,
                         ),
-                      ],
-                    );
-                  },
-                ),
+                      ),
+                    ],
+                  );
+                },
               ),
-              const SizedBox(height: 8),
-              Text('Current ${currentForceKg}kg • Max ${maxForceRecordedKg}kg'),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            Text('Current ${currentForceKg}kg • Max ${maxForceRecordedKg}kg'),
+          ],
         ),
       ),
     );
@@ -175,8 +168,25 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              SegmentedButton<ExerciseHand>(
+                segments: const [
+                  ButtonSegment<ExerciseHand>(
+                    value: ExerciseHand.left,
+                    label: Text('Left'),
+                  ),
+                  ButtonSegment<ExerciseHand>(
+                    value: ExerciseHand.right,
+                    label: Text('Right'),
+                  ),
+                ],
+                selected: <ExerciseHand>{selectedHand},
+                onSelectionChanged: (hands) {
+                  _setSelectedHand(hands.first);
+                },
+              ),
+              const SizedBox(height: 12),
               Text(
-                'Tap a bar to select hand, then drag anywhere to measure ${_handLabel(selectedHand)} hand force.',
+                'Drag anywhere to measure ${_handLabel(selectedHand)} hand force.',
               ),
               const SizedBox(height: 12),
               Row(
@@ -188,7 +198,6 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
                       currentForceKg: currentLeftForceKg,
                       maxForceRecordedKg: maxLeftForceKg,
                       isActive: selectedHand == ExerciseHand.left,
-                      onTap: () => _setSelectedHand(ExerciseHand.left),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -199,7 +208,6 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
                       currentForceKg: currentRightForceKg,
                       maxForceRecordedKg: maxRightForceKg,
                       isActive: selectedHand == ExerciseHand.right,
-                      onTap: () => _setSelectedHand(ExerciseHand.right),
                     ),
                   ),
                 ],
