@@ -4,6 +4,34 @@ enum TargetForceMode { absoluteKg, relativePercent }
 
 enum ExerciseHand { left, right }
 
+class MaxLiftRecord {
+  MaxLiftRecord({
+    required this.date,
+    required this.leftKg,
+    required this.rightKg,
+  });
+
+  final DateTime date;
+  final int leftKg;
+  final int rightKg;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'date': date.toIso8601String(),
+      'leftKg': leftKg,
+      'rightKg': rightKg,
+    };
+  }
+
+  factory MaxLiftRecord.fromJson(Map<String, dynamic> json) {
+    return MaxLiftRecord(
+      date: DateTime.parse(json['date'] as String),
+      leftKg: json['leftKg'] as int,
+      rightKg: json['rightKg'] as int,
+    );
+  }
+}
+
 class Exercise {
   Exercise({
     required this.id,
@@ -19,6 +47,7 @@ class Exercise {
     this.startingHand = ExerciseHand.left,
     this.maxLiftLeftKg = 0,
     this.maxLiftRightKg = 0,
+    this.maxLiftHistory = const [],
     this.isDefault = false,
   });
 
@@ -35,6 +64,7 @@ class Exercise {
   final ExerciseHand startingHand;
   final int maxLiftLeftKg;
   final int maxLiftRightKg;
+  final List<MaxLiftRecord> maxLiftHistory;
   final bool isDefault;
 
   Exercise copyWith({
@@ -51,6 +81,7 @@ class Exercise {
     ExerciseHand? startingHand,
     int? maxLiftLeftKg,
     int? maxLiftRightKg,
+    List<MaxLiftRecord>? maxLiftHistory,
     bool? isDefault,
   }) {
     return Exercise(
@@ -67,6 +98,7 @@ class Exercise {
       startingHand: startingHand ?? this.startingHand,
       maxLiftLeftKg: maxLiftLeftKg ?? this.maxLiftLeftKg,
       maxLiftRightKg: maxLiftRightKg ?? this.maxLiftRightKg,
+      maxLiftHistory: maxLiftHistory ?? this.maxLiftHistory,
       isDefault: isDefault ?? this.isDefault,
     );
   }
@@ -86,6 +118,7 @@ class Exercise {
       'startingHand': startingHand.name,
       'maxLiftLeftKg': maxLiftLeftKg,
       'maxLiftRightKg': maxLiftRightKg,
+      'maxLiftHistory': maxLiftHistory.map((r) => r.toJson()).toList(),
       'isDefault': isDefault,
     };
   }
@@ -109,8 +142,12 @@ class Exercise {
           : ExerciseHand.left,
       maxLiftLeftKg: (json['maxLiftLeftKg'] as num?)?.round() ?? 0,
       maxLiftRightKg: (json['maxLiftRightKg'] as num?)?.round() ?? 0,
+      maxLiftHistory:
+          (json['maxLiftHistory'] as List<dynamic>?)
+              ?.map((e) => MaxLiftRecord.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
       isDefault: json['isDefault'] as bool? ?? false,
     );
   }
 }
-

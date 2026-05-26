@@ -9,7 +9,7 @@
 - Include a default "Rest" exercise template.
 - Exercises must define a target force.
 - Target force supports two modes: absolute kg or relative (% of user max lift).
-- Max lift is measured per exercise (left/right hand where applicable).
+- Max lift is measured per exercise (left/right hand where applicable) and retains historical records by date.
 - Force trigger: start only above a configurable threshold.
 - Threshold default: 10kg (from settings).
 - If force drops during a timed set: timer continues.
@@ -44,8 +44,13 @@
 
 - Add a benchmark tab with list of all benchmarkable exercises.
 - Open per-exercise max-lift measurement screen from benchmark list.
-- Measure current and max force with one bar (single-hand) or two bars (left/right hand).
-- Save measured value(s) back to the selected exercise.
+- Measure current and max session force. Use tap-to-switch hands instead of tabs.
+- Save measured value(s) back to the selected exercise history without closing the page.
+- Ensure force exceeds threshold setting before allowing save.
+- Render visual progression graph below force bars:
+  - Display filtered history (latest measurement per calendar day).
+  - Use dynamically date-scaled X-axis labeled `DD.MM.`.
+  - Adapt graph for one line or two lines (Left/Right) depending on exercise side switching flag.
 
 ### Phase 5 - Execution engine
 
