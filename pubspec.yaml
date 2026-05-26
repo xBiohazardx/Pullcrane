@@ -36,7 +36,9 @@ dependencies:
   cupertino_icons: ^1.0.8
   dynamic_color: ^1.8.0
   fl_chart: ^1.2.0
-  shared_preferences: ^2.5.3
+  path: ^1.9.1
+  sqflite_common: ^2.5.4+6
+  sqflite_common_ffi: ^2.3.6
 
 
 dev_dependencies:

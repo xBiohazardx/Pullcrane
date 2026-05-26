@@ -1,57 +1,53 @@
 import 'dart:convert';
 
+import 'package:pullcrane/data/local/local_database.dart';
 import 'package:pullcrane/domain/models/workout.dart';
 import 'package:pullcrane/domain/repositories/workout_repository.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common/sqlite_api.dart';
 
 class LocalWorkoutRepository implements WorkoutRepository {
-  static const String _storageKey = 'workouts.v1';
-
-  List<Workout> _cache = <Workout>[];
-
   @override
   Future<void> init() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String? raw = prefs.getString(_storageKey);
-
-    if (raw == null || raw.isEmpty) {
-      _cache = <Workout>[];
-      return;
-    }
-
-    final List<dynamic> decoded = jsonDecode(raw) as List<dynamic>;
-    _cache = decoded
-        .map((item) => Workout.fromJson(item as Map<String, dynamic>))
-        .toList();
+    await LocalDatabase.instance.database;
   }
 
   @override
   Future<List<Workout>> listWorkouts() async {
-    return List<Workout>.from(_cache)
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final Database db = await LocalDatabase.instance.database;
+    final List<Map<String, Object?>> rows = await db.query(
+      LocalDatabase.workoutsTable,
+      columns: <String>['payload_json'],
+      orderBy: 'LOWER(name) ASC',
+    );
+
+    return rows
+        .map((Map<String, Object?> row) => Workout.fromJson(
+              jsonDecode(row['payload_json']! as String) as Map<String, dynamic>,
+            ))
+        .toList();
   }
 
   @override
   Future<void> saveWorkout(Workout workout) async {
-    final int index = _cache.indexWhere((item) => item.id == workout.id);
-    if (index >= 0) {
-      _cache[index] = workout;
-    } else {
-      _cache.add(workout);
-    }
-    await _save();
+    final Database db = await LocalDatabase.instance.database;
+    await db.insert(
+      LocalDatabase.workoutsTable,
+      <String, Object?>{
+        'id': workout.id,
+        'name': workout.name,
+        'payload_json': jsonEncode(workout.toJson()),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   @override
   Future<void> deleteWorkout(String id) async {
-    _cache.removeWhere((workout) => workout.id == id);
-    await _save();
-  }
-
-  Future<void> _save() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String raw = jsonEncode(_cache.map((item) => item.toJson()).toList());
-    await prefs.setString(_storageKey, raw);
+    final Database db = await LocalDatabase.instance.database;
+    await db.delete(
+      LocalDatabase.workoutsTable,
+      where: 'id = ?',
+      whereArgs: <Object?>[id],
+    );
   }
 }
-
