@@ -38,6 +38,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
   }
 
   Future<void> _openForm({Workout? initial}) async {
+    _reload();
     final Workout? result = await Navigator.of(context).push<Workout>(
       MaterialPageRoute(
         builder: (_) => WorkoutFormPage(

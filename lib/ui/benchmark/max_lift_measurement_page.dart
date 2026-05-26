@@ -104,17 +104,17 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
                 height: 220,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final double barHeight = constraints.maxHeight;
-                    final double currentRatio = (currentForceKg / maxForceKg)
-                        .clamp(0, 1)
-                        .toDouble();
-                    final double maxRatio = (maxForceRecordedKg / maxForceKg)
-                        .clamp(0, 1)
-                        .toDouble();
-                    final double currentHeight = barHeight * currentRatio;
-                    final double maxLineBottom = ((barHeight * maxRatio) - 1)
-                        .clamp(0, barHeight - 2)
-                        .toDouble();
+                  final double barHeight = constraints.maxHeight;
+                  final double currentRatio = (currentForceKg / maxForceKg)
+                      .clamp(0, 1)
+                      .toDouble();
+                  final double maxRatio = (maxForceRecordedKg / maxForceKg)
+                      .clamp(0, 1)
+                      .toDouble();
+                  final double currentHeight = barHeight * currentRatio;
+                  final double maxLineBottom = ((barHeight * maxRatio) - 1)
+                      .clamp(0, barHeight - 2)
+                      .toDouble();
 
                     return Stack(
                       children: [

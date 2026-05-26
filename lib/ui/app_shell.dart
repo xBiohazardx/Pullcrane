@@ -16,12 +16,13 @@ class _AppShellState extends State<AppShell> {
   int currentIndex = 0;
   int homeRefreshTick = 0;
   int settingsRefreshTick = 0;
+  int benchmarkRefreshTick = 0;
 
   List<Widget> get pages => <Widget>[
     HomePage(key: ValueKey<int>(homeRefreshTick)),
     const WorkoutsPage(),
     const ExercisesPage(),
-    const BenchmarkPage(),
+    BenchmarkPage(key: ValueKey<int>(benchmarkRefreshTick)),
     SettingsPage(key: ValueKey<int>(settingsRefreshTick)),
   ];
 
@@ -35,6 +36,9 @@ class _AppShellState extends State<AppShell> {
           setState(() {
             if (index == 0) {
               homeRefreshTick++;
+            }
+            if (index == 3) {
+              benchmarkRefreshTick++;
             }
             if (index == 4) {
               settingsRefreshTick++;
