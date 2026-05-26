@@ -535,7 +535,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Force: ${currentForce}kg (target ${_targetLabel(exercise)})',
+                'Force: ${currentForce}kg',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: isInTargetRange ? Colors.green : null,
                 ),
@@ -599,11 +599,6 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                               setStartArmed
                                   ? 'Apply at least ${widget.forceThresholdKg} kg to start the set.'
                                   : 'Release to 0 kg first, then apply at least ${widget.forceThresholdKg} kg to start.',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          if (exercise != null)
-                            Text(
-                              'Target zone: $targetMinForce-$targetMaxForce kg (hys ${widget.targetHysteresisKg}kg)',
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                           if (phase == SessionPhase.activeSet &&
