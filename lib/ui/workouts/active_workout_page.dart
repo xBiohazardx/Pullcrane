@@ -8,6 +8,8 @@ import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/domain/models/workout.dart';
 import 'package:pullcrane/ui/force_chart.dart';
 import 'package:pullcrane/ui/force_input_dummy.dart';
+import 'package:pullcrane/domain/services/bluetooth_manager.dart';
+import 'package:pullcrane/ui/bluetooth_connection_sheet.dart';
 
 enum SessionPhase { waitingForForce, activeSet, resting, finished }
 
@@ -231,6 +233,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   @override
   void initState() {
     super.initState();
+    CraneScaleService.instance.addListener(_onBleForceChanged);
     chartTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
       if (!mounted) {
         return;
@@ -282,7 +285,15 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     handRestTimer?.cancel();
     phaseTimer?.cancel();
     targetVibrationTimer?.cancel();
+    CraneScaleService.instance.removeListener(_onBleForceChanged);
     super.dispose();
+  }
+
+  void _onBleForceChanged() {
+    if (!mounted) return;
+    if (CraneScaleService.instance.state == ScaleConnectionState.connected) {
+      _onForceChanged(CraneScaleService.instance.currentForce);
+    }
   }
 
   void _prepareCurrentSet() {
@@ -330,6 +341,14 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   }
 
   void _onForceChanged(int force) {
+    if (CraneScaleService.instance.state == ScaleConnectionState.connected && force != CraneScaleService.instance.currentForce) {
+      // Ignore manual dummy input if connected and it's a drag event (not from BLE)
+      // Actually, since we only call _onForceChanged directly from BLE layer with real force,
+      // we need to distinguish. But if we check `force != CraneScaleService.instance.currentForce`,
+      // we can ignore drag. Or better, just ignore drag events outright below.
+      return;
+    }
+
     final int nextForce = force.clamp(minForceKg, maxForceKg);
 
     setState(() {
@@ -523,6 +542,30 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Active: ${widget.workout.name}'),
+        actions: [
+          ListenableBuilder(
+            listenable: CraneScaleService.instance,
+            builder: (context, _) {
+              final state = CraneScaleService.instance.state;
+              IconData icon = Icons.bluetooth_disabled;
+              Color? color = Theme.of(context).disabledColor;
+
+              if (state == ScaleConnectionState.connected) {
+                icon = Icons.bluetooth_connected;
+                color = Colors.green;
+              } else if (state == ScaleConnectionState.scanning || state == ScaleConnectionState.connecting) {
+                icon = Icons.bluetooth_searching;
+                color = Colors.orange;
+              }
+
+              return IconButton(
+                icon: Icon(icon, color: color),
+                onPressed: () => BluetoothConnectionSheet.show(context),
+                tooltip: 'Bluetooth connection',
+              );
+            },
+          ),
+        ],
       ),
       body: ForceInputDummy(
         sensitivity: dummySensitivity,
@@ -673,14 +716,4 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
 

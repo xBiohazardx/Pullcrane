@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:pullcrane/data/app_repositories.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/ui/force_input_dummy.dart';
+import 'package:pullcrane/domain/services/bluetooth_manager.dart';
+import 'package:pullcrane/ui/bluetooth_connection_sheet.dart';
 
 class MaxLiftMeasurementPage extends StatefulWidget {
   const MaxLiftMeasurementPage({super.key, required this.exercise});
@@ -61,6 +63,21 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
         isSettingsLoaded = true;
       });
     }
+    CraneScaleService.instance.addListener(_onBleForceChanged);
+    selectedHand = widget.exercise.startingHand;
+  }
+
+  @override
+  void dispose() {
+    CraneScaleService.instance.removeListener(_onBleForceChanged);
+    super.dispose();
+  }
+
+  void _onBleForceChanged() {
+    if (!mounted) return;
+    if (CraneScaleService.instance.state == ScaleConnectionState.connected) {
+      _onForceChanged(CraneScaleService.instance.currentForce);
+    }
   }
 
   String _handLabel(ExerciseHand hand) {
@@ -68,6 +85,10 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
   }
 
   void _onForceChanged(int forceKg) {
+    if (CraneScaleService.instance.state == ScaleConnectionState.connected && forceKg != CraneScaleService.instance.currentForce) {
+      return;
+    }
+
     final int clamped = forceKg.clamp(minForceKg, maxForceKg);
     setState(() {
       if (selectedHand == ExerciseHand.left) {
@@ -398,7 +419,33 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Max Lift: ${currentExercise.name}')),
+      appBar: AppBar(
+        title: Text('Max Lift: ${widget.exercise.name}'),
+        actions: [
+          ListenableBuilder(
+            listenable: CraneScaleService.instance,
+            builder: (context, _) {
+              final state = CraneScaleService.instance.state;
+              IconData icon = Icons.bluetooth_disabled;
+              Color? color = Theme.of(context).disabledColor;
+
+              if (state == ScaleConnectionState.connected) {
+                icon = Icons.bluetooth_connected;
+                color = Colors.green;
+              } else if (state == ScaleConnectionState.scanning || state == ScaleConnectionState.connecting) {
+                icon = Icons.bluetooth_searching;
+                color = Colors.orange;
+              }
+
+              return IconButton(
+                icon: Icon(icon, color: color),
+                onPressed: () => BluetoothConnectionSheet.show(context),
+                tooltip: 'Bluetooth connection',
+              );
+            },
+          ),
+        ],
+      ),
       body: ForceInputDummy(
         sensitivity: dummySensitivity,
         minForce: minForceKg,
