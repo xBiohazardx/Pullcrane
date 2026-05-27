@@ -24,8 +24,12 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
   @override
   void initState() {
     super.initState();
-    nameController = TextEditingController(text: widget.initialWorkout?.name ?? '');
-    entries = List<WorkoutExerciseEntry>.from(widget.initialWorkout?.entries ?? <WorkoutExerciseEntry>[]);
+    nameController = TextEditingController(
+      text: widget.initialWorkout?.name ?? '',
+    );
+    entries = List<WorkoutExerciseEntry>.from(
+      widget.initialWorkout?.entries ?? <WorkoutExerciseEntry>[],
+    );
   }
 
   @override
@@ -34,7 +38,10 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
     super.dispose();
   }
 
-  Future<void> _addEntry() async {
+  Future<void> _showEntryDialog({
+    WorkoutExerciseEntry? existingEntry,
+    int? index,
+  }) async {
     if (widget.availableExercises.isEmpty) {
       if (!mounted) {
         return;
@@ -45,10 +52,19 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
       return;
     }
 
-    String selectedExerciseId = widget.availableExercises.first.id;
-    String setsInput = '3';
-    String restOverrideInput = '';
+    String selectedExerciseId =
+        existingEntry?.exerciseId ?? widget.availableExercises.first.id;
+    // ensure selectedExerciseId is still valid
+    if (!widget.availableExercises.any((e) => e.id == selectedExerciseId)) {
+      selectedExerciseId = widget.availableExercises.first.id;
+    }
+
+    String setsInput = existingEntry?.sets.toString() ?? '3';
+    String restOverrideInput =
+        existingEntry?.restOverrideSeconds?.toString() ?? '';
     final GlobalKey<FormState> dialogFormKey = GlobalKey<FormState>();
+
+    final bool isEditing = existingEntry != null;
 
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -56,7 +72,9 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('Add Exercise Entry'),
+              title: Text(
+                isEditing ? 'Edit Exercise Entry' : 'Add Exercise Entry',
+              ),
               content: Form(
                 key: dialogFormKey,
                 child: Column(
@@ -129,7 +147,7 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
                       Navigator.of(context).pop(true);
                     }
                   },
-                  child: const Text('Add'),
+                  child: Text(isEditing ? 'Save' : 'Add'),
                 ),
               ],
             );
@@ -148,14 +166,17 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
         : int.parse(restOverrideInput.trim());
 
     setState(() {
-      entries = <WorkoutExerciseEntry>[
-        ...entries,
-        WorkoutExerciseEntry(
-          exerciseId: selectedExerciseId,
-          sets: sets,
-          restOverrideSeconds: restOverride,
-        ),
-      ];
+      final newEntry = WorkoutExerciseEntry(
+        exerciseId: selectedExerciseId,
+        sets: sets,
+        restOverrideSeconds: restOverride,
+      );
+
+      if (index != null) {
+        entries[index] = newEntry;
+      } else {
+        entries = <WorkoutExerciseEntry>[...entries, newEntry];
+      }
     });
   }
 
@@ -171,7 +192,9 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
     }
 
     final Workout workout = Workout(
-      id: widget.initialWorkout?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+      id:
+          widget.initialWorkout?.id ??
+          DateTime.now().microsecondsSinceEpoch.toString(),
       name: nameController.text.trim(),
       entries: entries,
     );
@@ -183,66 +206,122 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
   Widget build(BuildContext context) {
     final bool isEditing = widget.initialWorkout != null;
 
+    final header = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextFormField(
+          controller: nameController,
+          decoration: const InputDecoration(labelText: 'Workout name'),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return 'Workout name is required.';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 16),
+        Text('Exercises', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        if (entries.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 16.0),
+            child: Text('No exercises added yet.'),
+          ),
+      ],
+    );
+
+    final footer = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 24),
+        FilledButton(onPressed: _submit, child: const Text('Save Workout')),
+      ],
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: Text(isEditing ? 'Edit Workout' : 'Create Workout'),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addEntry,
+        onPressed: _showEntryDialog,
         icon: const Icon(Icons.add),
         label: const Text('Add Exercise'),
       ),
       body: Form(
         key: formKey,
-        child: ListView(
+        child: ReorderableListView(
           padding: const EdgeInsets.all(16),
-          children: [
-            TextFormField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Workout name'),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Workout name is required.';
-                }
-                return null;
+          buildDefaultDragHandles: false,
+          header: header,
+          footer: footer,
+          proxyDecorator:
+              (Widget child, int index, Animation<double> animation) {
+                return Material(
+                  elevation: 6,
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  shadowColor: Theme.of(
+                    context,
+                  ).colorScheme.shadow.withValues(alpha: 0.2),
+                  child: child,
+                );
               },
-            ),
-            const SizedBox(height: 16),
-            Text('Exercises', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            if (entries.isEmpty)
-              const Text('No exercises added yet.')
-            else
-              ...entries.asMap().entries.map((entry) {
-                final int index = entry.key;
-                final WorkoutExerciseEntry item = entry.value;
-                final Exercise? exercise = widget.availableExercises
-                    .where((candidate) => candidate.id == item.exerciseId)
-                    .cast<Exercise?>()
-                    .firstWhere((candidate) => candidate != null, orElse: () => null);
+          onReorder: (int oldIndex, int newIndex) {
+            setState(() {
+              if (oldIndex < newIndex) {
+                newIndex -= 1;
+              }
+              final item = entries.removeAt(oldIndex);
+              entries.insert(newIndex, item);
+            });
+          },
+          children: entries.asMap().entries.map((entry) {
+            final int index = entry.key;
+            final WorkoutExerciseEntry item = entry.value;
+            final Exercise? exercise = widget.availableExercises
+                .where((candidate) => candidate.id == item.exerciseId)
+                .cast<Exercise?>()
+                .firstWhere(
+                  (candidate) => candidate != null,
+                  orElse: () => null,
+                );
 
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
+            return ReorderableDelayedDragStartListener(
+              key: ObjectKey(item),
+              index: index,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8.0,
+                  vertical: 4.0,
+                ),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8.0),
                   title: Text(exercise?.name ?? 'Unknown exercise'),
                   subtitle: Text(
                     'Sets: ${item.sets}${item.restOverrideSeconds != null ? ' • Rest override: ${item.restOverrideSeconds}s' : ''}',
                   ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => _removeEntry(index),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () =>
+                            _showEntryDialog(existingEntry: item, index: index),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => _removeEntry(index),
+                      ),
+                    ],
                   ),
-                );
-              }),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _submit,
-              child: const Text('Save Workout'),
-            ),
-          ],
+                ),
+              ),
+            );
+          }).toList(),
         ),
       ),
     );
   }
 }
-
-
