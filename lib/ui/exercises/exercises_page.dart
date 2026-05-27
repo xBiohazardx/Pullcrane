@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pullcrane/data/app_repositories.dart';
+import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/ui/exercises/exercise_form_page.dart';
 
@@ -21,7 +21,7 @@ class _ExercisesPageState extends State<ExercisesPage> {
   }
 
   Future<void> _reload() async {
-    final List<Exercise> loaded = await AppRepositories.exercises.listExercises();
+    final List<Exercise> loaded = await AppStores.exercises.listExercises();
     if (!mounted) {
       return;
     }
@@ -42,12 +42,12 @@ class _ExercisesPageState extends State<ExercisesPage> {
       return;
     }
 
-    await AppRepositories.exercises.saveExercise(result);
+    await AppStores.exercises.saveExercise(result);
     await _reload();
   }
 
   Future<void> _deleteExercise(Exercise exercise) async {
-    await AppRepositories.exercises.deleteExercise(exercise.id);
+    await AppStores.exercises.deleteExercise(exercise.id);
     await _reload();
   }
 
@@ -69,19 +69,13 @@ class _ExercisesPageState extends State<ExercisesPage> {
                   itemCount: exercises.length,
                   itemBuilder: (context, index) {
                     final Exercise exercise = exercises[index];
-                    final String modeInfo = exercise.mode == ExerciseMode.reps
-                        ? '${exercise.reps ?? 0} reps'
-                        : '${exercise.durationSeconds ?? 0}s hold';
-                    final String targetInfo = exercise.targetForceMode == TargetForceMode.absoluteKg
-                        ? '${exercise.targetForceValue.toStringAsFixed(exercise.targetForceValue % 1 == 0 ? 0 : 1)}kg target'
-                        : '${exercise.targetForceValue.toStringAsFixed(exercise.targetForceValue % 1 == 0 ? 0 : 1)}% target';
                     final String handInfo = exercise.isSideSwitching
-                        ? 'Switch: ${exercise.startingHand.name}'
-                        : 'Single hand';
+                        ? 'Alternating hands'
+                        : 'Single configuration';
 
                     return ListTile(
                       title: Text(exercise.name),
-                      subtitle: Text('$modeInfo • $targetInfo • $handInfo • Rest ${exercise.defaultRestSeconds}s'),
+                      subtitle: Text('${exercise.description}\n$handInfo'),
                       trailing: exercise.isDefault
                           ? const Icon(Icons.lock_outline)
                           : IconButton(

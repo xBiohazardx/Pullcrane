@@ -81,7 +81,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       return null;
     }
 
-    if (completedHand == exercise.startingHand) {
+    if (completedHand == entry.startingHand) {
       pendingHandInSet = _oppositeHand(completedHand);
     } else {
       pendingHandInSet = null;
@@ -93,7 +93,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
 
     if (currentSet < entry.sets) {
       // Both hands completed this set, next set starts from starting hand.
-      return exercise.startingHand;
+      return entry.startingHand;
     }
 
     return null;
@@ -126,10 +126,10 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         : exercise.maxLiftRightKg;
   }
 
-  int _effectiveExerciseMaxLiftKg(Exercise exercise) {
+  int _effectiveExerciseMaxLiftKg(Exercise exercise, WorkoutExerciseEntry entry) {
     final ExerciseHand primaryHand = exercise.isSideSwitching
-        ? (activeHand ?? exercise.startingHand)
-        : exercise.startingHand;
+        ? (activeHand ?? entry.startingHand)
+        : entry.startingHand;
     final ExerciseHand secondaryHand = _oppositeHand(primaryHand);
 
     final int primaryMaxLift = _maxLiftForHand(exercise, primaryHand);
@@ -145,46 +145,47 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     return 60; // default fallback if max lift is not set
   }
 
-  int _resolveTargetForceKg(Exercise? exercise) {
-    if (exercise == null) {
+  int _resolveTargetForceKg(Exercise? exercise, WorkoutExerciseEntry? entry) {
+    if (exercise == null || entry == null) {
       return widget.forceThresholdKg;
     }
-    if (exercise.targetForceMode == TargetForceMode.relativePercent) {
-      final int effectiveMaxLift = _effectiveExerciseMaxLiftKg(exercise);
+    if (entry.targetForceMode == TargetForceMode.relativePercent) {
+      final int effectiveMaxLift = _effectiveExerciseMaxLiftKg(exercise, entry);
       final double relativeKg =
-          (effectiveMaxLift * exercise.targetForceValue) / 100;
+          (effectiveMaxLift * entry.targetForceValue) / 100;
       return relativeKg.round().clamp(minForceKg, maxForceKg);
     }
-    return exercise.targetForceValue.round().clamp(minForceKg, maxForceKg);
+    return entry.targetForceValue.round().clamp(minForceKg, maxForceKg);
   }
 
-  int _targetMinForceKg(Exercise? exercise) {
-    final int baseTarget = _resolveTargetForceKg(exercise);
+  int _targetMinForceKg(Exercise? exercise, WorkoutExerciseEntry? entry) {
+    final int baseTarget = _resolveTargetForceKg(exercise, entry);
     return max(minForceKg, baseTarget - widget.targetHysteresisKg);
   }
 
-  int _targetMaxForceKg(Exercise? exercise) {
-    final int baseTarget = _resolveTargetForceKg(exercise);
+  int _targetMaxForceKg(Exercise? exercise, WorkoutExerciseEntry? entry) {
+    final int baseTarget = _resolveTargetForceKg(exercise, entry);
     final int baseMax = min(maxForceKg, baseTarget + 5);
     return min(maxForceKg, baseMax + widget.targetHysteresisKg);
   }
 
-  String _targetLabel(Exercise? exercise) {
-    if (exercise == null) {
+  String _targetLabel(Exercise? exercise, WorkoutExerciseEntry? entry) {
+    if (exercise == null || entry == null) {
       return '${widget.forceThresholdKg} kg';
     }
-    if (exercise.targetForceMode == TargetForceMode.relativePercent) {
-      final String percent = exercise.targetForceValue
-          .toStringAsFixed(exercise.targetForceValue % 1 == 0 ? 0 : 1);
-      return '$percent% (~${_resolveTargetForceKg(exercise)}kg)';
+    if (entry.targetForceMode == TargetForceMode.relativePercent) {
+      final String percent = entry.targetForceValue
+          .toStringAsFixed(entry.targetForceValue % 1 == 0 ? 0 : 1);
+      return '$percent% (~${_resolveTargetForceKg(exercise, entry)}kg)';
     }
-    return '${exercise.targetForceValue.toStringAsFixed(exercise.targetForceValue % 1 == 0 ? 0 : 1)}kg';
+    return '${entry.targetForceValue.toStringAsFixed(entry.targetForceValue % 1 == 0 ? 0 : 1)}kg';
   }
 
   bool _isInsideTarget(int force) {
     final Exercise? exercise = currentExercise;
-    final int minTarget = _targetMinForceKg(exercise);
-    final int maxTarget = _targetMaxForceKg(exercise);
+    final WorkoutExerciseEntry? entry = currentEntry;
+    final int minTarget = _targetMinForceKg(exercise, entry);
+    final int maxTarget = _targetMaxForceKg(exercise, entry);
     return force >= minTarget && force <= maxTarget;
   }
 
@@ -322,14 +323,14 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     }
 
     if (exercise.isSideSwitching) {
-      activeHand ??= exercise.startingHand;
+      activeHand ??= entry.startingHand;
     } else {
       activeHand = null;
       pendingHandInSet = null;
     }
 
     setState(() {
-      remainingSetSeconds = exercise.durationSeconds ?? 0;
+      remainingSetSeconds = entry.durationSeconds ?? 0;
       phase = SessionPhase.waitingForForce;
       suggestedSwitchHand = null;
       setStartArmed =
@@ -374,8 +375,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       return;
     }
 
-    final Exercise? exercise = currentExercise;
-    if (exercise?.mode == ExerciseMode.duration) {
+    final WorkoutExerciseEntry? entry = currentEntry;
+    if (entry?.mode == ExerciseMode.duration) {
       setState(() {
         setStartArmed = false;
       });
@@ -426,7 +427,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       return;
     }
 
-    final int restSeconds = entry.restOverrideSeconds ?? exercise.defaultRestSeconds;
+    final int restSeconds = entry.restSeconds;
     if (completedHand != null) {
       handRemainingRest[completedHand] = restSeconds;
     }
@@ -509,7 +510,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         currentSet++;
         suggestedSwitchHand = null;
         activeHand = exercise?.isSideSwitching == true
-            ? exercise!.startingHand
+            ? entry.startingHand
             : null;
         pendingHandInSet = null;
         setStartArmed = false;
@@ -534,8 +535,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     final WorkoutExerciseEntry? entry = currentEntry;
     final Exercise? exercise = currentExercise;
     final ExerciseHand? activeHandForUi = activeHand;
-    final int targetMinForce = _targetMinForceKg(exercise);
-    final int targetMaxForce = _targetMaxForceKg(exercise);
+    final int targetMinForce = _targetMinForceKg(exercise, entry);
+    final int targetMaxForce = _targetMaxForceKg(exercise, entry);
 
     return Scaffold(
       appBar: AppBar(
@@ -616,14 +617,12 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                             const SizedBox(height: 4),
                             Text('Active hand: ${_handLabel(activeHandForUi)}'),
                           ],
-                          if (exercise != null) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              exercise.mode == ExerciseMode.duration
-                                  ? 'Hold ${exercise.durationSeconds ?? 0}s'
-                                  : '${exercise.reps ?? 0} reps',
-                            ),
-                          ],
+                          const SizedBox(height: 8),
+                          Text(
+                            entry.mode == ExerciseMode.duration
+                                ? 'Hold ${entry.durationSeconds ?? 0}s'
+                                : '${entry.reps ?? 0} reps',
+                          ),
                           const SizedBox(height: 12),
                           Expanded(
                             child: ForceChart(
@@ -643,7 +642,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                           if (phase == SessionPhase.activeSet &&
-                              exercise?.mode == ExerciseMode.duration)
+                              entry.mode == ExerciseMode.duration)
                             Text(
                               'Remaining hold: $remainingSetSeconds s',
                               style: Theme.of(context).textTheme.titleMedium,
@@ -674,7 +673,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                         child: const Text('Done'),
                       ),
                     )
-                  else if (exercise == null)
+                  else if (entry == null)
                     Expanded(
                       child: FilledButton(
                         onPressed: _goToNextSetOrEntry,
@@ -699,7 +698,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                             ? _completeCurrentSet
                             : null,
                         child: Text(
-                          exercise.mode == ExerciseMode.duration
+                          entry.mode == ExerciseMode.duration
                               ? 'Finish Set Early'
                               : 'Complete Set',
                         ),

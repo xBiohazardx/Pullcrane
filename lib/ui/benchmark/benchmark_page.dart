@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pullcrane/data/app_repositories.dart';
+import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/ui/benchmark/max_lift_measurement_page.dart';
 
@@ -21,7 +21,7 @@ class _BenchmarkPageState extends State<BenchmarkPage> {
   }
 
   Future<void> _reload() async {
-    final List<Exercise> loaded = await AppRepositories.exercises.listExercises();
+    final List<Exercise> loaded = await AppStores.exercises.listExercises();
     if (!mounted) {
       return;
     }
@@ -49,7 +49,7 @@ class _BenchmarkPageState extends State<BenchmarkPage> {
       return;
     }
 
-    await AppRepositories.exercises.saveExercise(updated);
+    await AppStores.exercises.saveExercise(updated);
     await _reload();
 
     if (!mounted) {

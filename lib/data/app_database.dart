@@ -6,10 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart' as sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-class LocalDatabase {
-  LocalDatabase._();
+class AppDatabase {
+  AppDatabase._();
 
-  static final LocalDatabase instance = LocalDatabase._();
+  static final AppDatabase instance = AppDatabase._();
 
   static const String exercisesTable = 'exercises';
   static const String exerciseHistoryTable = 'exercise_history';
@@ -18,7 +18,7 @@ class LocalDatabase {
   static const String settingsTable = 'app_settings';
 
   static const String _dbName = 'pullcrane.db';
-  static const int _dbVersion = 1;
+  static const int _dbVersion = 2;
 
   Database? _database;
 
@@ -73,6 +73,9 @@ class LocalDatabase {
         onCreate: (sqflite.Database db, int version) async {
           await _createSchema(db);
         },
+        onUpgrade: (sqflite.Database db, int oldVersion, int newVersion) async {
+          await _createSchema(db);
+        },
       );
       return _database!;
     }
@@ -89,6 +92,9 @@ class LocalDatabase {
           await db.execute('PRAGMA foreign_keys = ON');
         },
         onCreate: (Database db, int version) async {
+          await _createSchema(db);
+        },
+        onUpgrade: (Database db, int oldVersion, int newVersion) async {
           await _createSchema(db);
         },
       ),
@@ -135,6 +141,12 @@ class LocalDatabase {
   }
 
   Future<void> _createSchema(Database db) async {
+    await db.execute('DROP TABLE IF EXISTS $workoutEntriesTable');
+    await db.execute('DROP TABLE IF EXISTS $workoutsTable');
+    await db.execute('DROP TABLE IF EXISTS $exerciseHistoryTable');
+    await db.execute('DROP TABLE IF EXISTS $exercisesTable');
+    await db.execute('DROP TABLE IF EXISTS $settingsTable');
+
     await db.execute('''
       CREATE TABLE IF NOT EXISTS $settingsTable (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -151,14 +163,7 @@ class LocalDatabase {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         description TEXT NOT NULL,
-        mode TEXT NOT NULL,
-        reps INTEGER,
-        duration_seconds INTEGER,
-        default_rest_seconds INTEGER NOT NULL,
-        target_force_mode TEXT NOT NULL,
-        target_force_value REAL NOT NULL,
         is_side_switching INTEGER NOT NULL,
-        starting_hand TEXT NOT NULL,
         max_lift_left_kg INTEGER NOT NULL,
         max_lift_right_kg INTEGER NOT NULL,
         is_default INTEGER NOT NULL DEFAULT 0
@@ -189,7 +194,13 @@ class LocalDatabase {
         workout_id TEXT NOT NULL,
         exercise_id TEXT NOT NULL,
         sets INTEGER NOT NULL,
-        rest_override_seconds INTEGER,
+        mode TEXT NOT NULL,
+        reps INTEGER,
+        duration_seconds INTEGER,
+        rest_seconds INTEGER NOT NULL,
+        target_force_mode TEXT NOT NULL,
+        target_force_value REAL NOT NULL,
+        starting_hand TEXT NOT NULL,
         order_index INTEGER NOT NULL,
         FOREIGN KEY(workout_id) REFERENCES $workoutsTable(id) ON DELETE CASCADE,
         FOREIGN KEY(exercise_id) REFERENCES $exercisesTable(id) ON DELETE CASCADE

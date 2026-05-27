@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:pullcrane/data/app_repositories.dart';
+import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/domain/models/app_settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -41,7 +41,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _load() async {
-    final AppSettings settings = await AppRepositories.settings.load();
+    final AppSettings settings = await AppStores.settings.load();
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     
     if (!mounted) {
@@ -73,7 +73,7 @@ class _SettingsPageState extends State<SettingsPage> {
       requireZeroBeforeSetStart: requireZeroBeforeSetStart,
     );
 
-    await AppRepositories.settings.save(settings);
+    await AppStores.settings.save(settings);
     if (!mounted) {
       return;
     }
@@ -127,7 +127,7 @@ class _SettingsPageState extends State<SettingsPage> {
     });
 
     try {
-      await AppRepositories.reload();
+      await AppStores.reload();
       await _load(); // reload settings from the newly active DB
       
       if (!mounted) return;

@@ -1,25 +1,23 @@
-import 'package:pullcrane/data/local/local_database.dart';
+import 'package:pullcrane/data/app_database.dart';
+import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/domain/models/workout.dart';
-import 'package:pullcrane/domain/repositories/workout_repository.dart';
 import 'package:sqflite_common/sqlite_api.dart';
 
-class LocalWorkoutRepository implements WorkoutRepository {
-  @override
+class WorkoutStore {
   Future<void> init() async {
-    await LocalDatabase.instance.database;
+    await AppDatabase.instance.database;
   }
 
-  @override
   Future<List<Workout>> listWorkouts() async {
-    final Database db = await LocalDatabase.instance.database;
+    final Database db = await AppDatabase.instance.database;
     
     final List<Map<String, Object?>> workoutRows = await db.query(
-      LocalDatabase.workoutsTable,
+      AppDatabase.workoutsTable,
       orderBy: 'LOWER(name) ASC',
     );
 
     final List<Map<String, Object?>> entryRows = await db.query(
-      LocalDatabase.workoutEntriesTable,
+      AppDatabase.workoutEntriesTable,
       orderBy: 'order_index ASC',
     );
 
@@ -29,7 +27,13 @@ class LocalWorkoutRepository implements WorkoutRepository {
       final WorkoutExerciseEntry entry = WorkoutExerciseEntry(
         exerciseId: row['exercise_id'] as String,
         sets: row['sets'] as int,
-        restOverrideSeconds: row['rest_override_seconds'] as int?,
+        mode: ExerciseMode.values.byName(row['mode'] as String),
+        reps: row['reps'] as int?,
+        durationSeconds: row['duration_seconds'] as int?,
+        restSeconds: row['rest_seconds'] as int,
+        targetForceMode: TargetForceMode.values.byName(row['target_force_mode'] as String),
+        targetForceValue: (row['target_force_value'] as num).toDouble(),
+        startingHand: ExerciseHand.values.byName(row['starting_hand'] as String),
       );
       entriesMap.putIfAbsent(workoutId, () => <WorkoutExerciseEntry>[]).add(entry);
     }
@@ -44,13 +48,12 @@ class LocalWorkoutRepository implements WorkoutRepository {
     }).toList();
   }
 
-  @override
   Future<void> saveWorkout(Workout workout) async {
-    final Database db = await LocalDatabase.instance.database;
+    final Database db = await AppDatabase.instance.database;
     
     await db.transaction((Transaction txn) async {
       await txn.insert(
-        LocalDatabase.workoutsTable,
+        AppDatabase.workoutsTable,
         <String, Object?>{
           'id': workout.id,
           'name': workout.name,
@@ -59,7 +62,7 @@ class LocalWorkoutRepository implements WorkoutRepository {
       );
 
       await txn.delete(
-        LocalDatabase.workoutEntriesTable,
+        AppDatabase.workoutEntriesTable,
         where: 'workout_id = ?',
         whereArgs: <Object?>[workout.id],
       );
@@ -67,12 +70,18 @@ class LocalWorkoutRepository implements WorkoutRepository {
       for (var i = 0; i < workout.entries.length; i++) {
         final WorkoutExerciseEntry entry = workout.entries[i];
         await txn.insert(
-          LocalDatabase.workoutEntriesTable,
+          AppDatabase.workoutEntriesTable,
           <String, Object?>{
             'workout_id': workout.id,
             'exercise_id': entry.exerciseId,
             'sets': entry.sets,
-            'rest_override_seconds': entry.restOverrideSeconds,
+            'mode': entry.mode.name,
+            'reps': entry.reps,
+            'duration_seconds': entry.durationSeconds,
+            'rest_seconds': entry.restSeconds,
+            'target_force_mode': entry.targetForceMode.name,
+            'target_force_value': entry.targetForceValue,
+            'starting_hand': entry.startingHand.name,
             'order_index': i,
           },
         );
@@ -80,18 +89,17 @@ class LocalWorkoutRepository implements WorkoutRepository {
     });
   }
 
-  @override
   Future<void> deleteWorkout(String id) async {
-    final Database db = await LocalDatabase.instance.database;
+    final Database db = await AppDatabase.instance.database;
     await db.transaction((Transaction txn) async {
       // Manual cascade delete
       await txn.delete(
-        LocalDatabase.workoutEntriesTable,
+        AppDatabase.workoutEntriesTable,
         where: 'workout_id = ?',
         whereArgs: <Object?>[id],
       );
       await txn.delete(
-        LocalDatabase.workoutsTable,
+        AppDatabase.workoutsTable,
         where: 'id = ?',
         whereArgs: <Object?>[id],
       );

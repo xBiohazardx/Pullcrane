@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pullcrane/data/app_repositories.dart';
+import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/domain/models/workout.dart';
 import 'package:pullcrane/ui/workouts/workout_form_page.dart';
@@ -23,8 +23,8 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
   }
 
   Future<void> _reload() async {
-    final List<Workout> loadedWorkouts = await AppRepositories.workouts.listWorkouts();
-    final List<Exercise> loadedExercises = await AppRepositories.exercises.listExercises();
+    final List<Workout> loadedWorkouts = await AppStores.workouts.listWorkouts();
+    final List<Exercise> loadedExercises = await AppStores.exercises.listExercises();
 
     if (!mounted) {
       return;
@@ -52,12 +52,12 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
       return;
     }
 
-    await AppRepositories.workouts.saveWorkout(result);
+    await AppStores.workouts.saveWorkout(result);
     await _reload();
   }
 
   Future<void> _deleteWorkout(Workout workout) async {
-    await AppRepositories.workouts.deleteWorkout(workout.id);
+    await AppStores.workouts.deleteWorkout(workout.id);
     await _reload();
   }
 

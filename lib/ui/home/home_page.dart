@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pullcrane/data/app_repositories.dart';
+import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/domain/models/app_settings.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/domain/models/workout.dart';
@@ -24,8 +24,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _reload() async {
-    final List<Workout> loadedWorkouts = await AppRepositories.workouts.listWorkouts();
-    final List<Exercise> loadedExercises = await AppRepositories.exercises.listExercises();
+    final List<Workout> loadedWorkouts = await AppStores.workouts.listWorkouts();
+    final List<Exercise> loadedExercises = await AppStores.exercises.listExercises();
 
     if (!mounted) {
       return;
@@ -41,10 +41,10 @@ class _HomePageState extends State<HomePage> {
   Future<void> _startWorkout(Workout workout) async {
     // Home tab is kept alive in IndexedStack, so refresh before start to avoid stale exercise data.
     final List<Exercise> latestExercises =
-        await AppRepositories.exercises.listExercises();
+        await AppStores.exercises.listExercises();
     final List<Workout> latestWorkouts =
-        await AppRepositories.workouts.listWorkouts();
-    final AppSettings settings = await AppRepositories.settings.load();
+        await AppStores.workouts.listWorkouts();
+    final AppSettings settings = await AppStores.settings.load();
 
     final Workout workoutToStart = latestWorkouts
         .where((item) => item.id == workout.id)

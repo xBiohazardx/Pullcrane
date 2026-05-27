@@ -60,8 +60,16 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
     }
 
     String setsInput = existingEntry?.sets.toString() ?? '3';
-    String restOverrideInput =
-        existingEntry?.restOverrideSeconds?.toString() ?? '';
+    ExerciseMode mode = existingEntry?.mode ?? ExerciseMode.reps;
+    String repsInput = existingEntry?.reps?.toString() ?? '8';
+    String durationInput = existingEntry?.durationSeconds?.toString() ?? '30';
+    String restInput = existingEntry?.restSeconds.toString() ?? '60';
+    TargetForceMode targetForceMode = existingEntry?.targetForceMode ?? TargetForceMode.absoluteKg;
+    String targetForceInput = (existingEntry?.targetForceValue ?? 10).toStringAsFixed(
+        (existingEntry?.targetForceValue ?? 10) % 1 == 0 ? 0 : 1,
+    );
+    ExerciseHand startingHand = existingEntry?.startingHand ?? ExerciseHand.left;
+
     final GlobalKey<FormState> dialogFormKey = GlobalKey<FormState>();
 
     final bool isEditing = existingEntry != null;
@@ -71,69 +79,203 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final Exercise? selectedExercise = widget.availableExercises
+                .where((e) => e.id == selectedExerciseId)
+                .firstOrNull;
+            final bool isSideSwitching = selectedExercise?.isSideSwitching ?? false;
+
             return AlertDialog(
               title: Text(
                 isEditing ? 'Edit Exercise Entry' : 'Add Exercise Entry',
               ),
               content: Form(
                 key: dialogFormKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedExerciseId,
-                      decoration: const InputDecoration(labelText: 'Exercise'),
-                      items: widget.availableExercises
-                          .map(
-                            (exercise) => DropdownMenuItem<String>(
-                              value: exercise.id,
-                              child: Text(exercise.name),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) {
-                          return;
-                        }
-                        setDialogState(() {
-                          selectedExerciseId = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      initialValue: setsInput,
-                      decoration: const InputDecoration(labelText: 'Sets'),
-                      keyboardType: TextInputType.number,
-                      onChanged: (value) => setsInput = value,
-                      validator: (value) {
-                        final int? parsed = int.tryParse(value ?? '');
-                        if (parsed == null || parsed <= 0) {
-                          return 'Sets must be greater than zero.';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      initialValue: restOverrideInput,
-                      decoration: const InputDecoration(
-                        labelText: 'Rest override (seconds, optional)',
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedExerciseId,
+                        decoration: const InputDecoration(labelText: 'Exercise'),
+                        items: widget.availableExercises
+                            .map(
+                              (exercise) => DropdownMenuItem<String>(
+                                value: exercise.id,
+                                child: Text(exercise.name),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) {
+                            return;
+                          }
+                          setDialogState(() {
+                            selectedExerciseId = value;
+                          });
+                        },
                       ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (value) => restOverrideInput = value,
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        initialValue: setsInput,
+                        decoration: const InputDecoration(labelText: 'Sets'),
+                        keyboardType: TextInputType.number,
+                        onChanged: (value) => setsInput = value,
+                        validator: (value) {
+                          final int? parsed = int.tryParse(value ?? '');
+                          if (parsed == null || parsed <= 0) {
+                            return 'Sets must be greater than zero.';
+                          }
                           return null;
-                        }
-                        final int? parsed = int.tryParse(value);
-                        if (parsed == null || parsed < 0) {
-                          return 'Enter rest >= 0.';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<ExerciseMode>(
+                        initialValue: mode,
+                        decoration: const InputDecoration(labelText: 'Mode'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: ExerciseMode.reps,
+                            child: Text('Reps based'),
+                          ),
+                          DropdownMenuItem(
+                            value: ExerciseMode.duration,
+                            child: Text('Duration based'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) {
+                            return;
+                          }
+                          setDialogState(() {
+                            mode = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      if (mode == ExerciseMode.reps)
+                        TextFormField(
+                          initialValue: repsInput,
+                          decoration: const InputDecoration(labelText: 'Reps'),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) => repsInput = value,
+                          validator: (value) {
+                            final int? parsed = int.tryParse(value ?? '');
+                            if (parsed == null || parsed <= 0) {
+                              return 'Enter reps > 0.';
+                            }
+                            return null;
+                          },
+                        )
+                      else
+                        TextFormField(
+                          initialValue: durationInput,
+                          decoration: const InputDecoration(labelText: 'Duration (seconds)'),
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) => durationInput = value,
+                          validator: (value) {
+                            final int? parsed = int.tryParse(value ?? '');
+                            if (parsed == null || parsed <= 0) {
+                              return 'Enter duration > 0.';
+                            }
+                            return null;
+                          },
+                        ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        initialValue: restInput,
+                        decoration: const InputDecoration(
+                          labelText: 'Rest (seconds)',
+                        ),
+                        keyboardType: TextInputType.number,
+                        onChanged: (value) => restInput = value,
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Rest time is required.';
+                          }
+                          final int? parsed = int.tryParse(value);
+                          if (parsed == null || parsed < 0) {
+                            return 'Enter rest >= 0.';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<TargetForceMode>(
+                        initialValue: targetForceMode,
+                        decoration: const InputDecoration(labelText: 'Target force mode'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: TargetForceMode.absoluteKg,
+                            child: Text('Absolute (kg)'),
+                          ),
+                          DropdownMenuItem(
+                            value: TargetForceMode.relativePercent,
+                            child: Text('Relative (% of max lift)'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) {
+                            return;
+                          }
+                          setDialogState(() {
+                            targetForceMode = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        initialValue: targetForceInput,
+                        decoration: InputDecoration(
+                          labelText: targetForceMode == TargetForceMode.absoluteKg
+                              ? 'Target force (kg)'
+                              : 'Target force (% of max lift)',
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        onChanged: (value) => targetForceInput = value,
+                        validator: (value) {
+                          final double? parsed = double.tryParse(value ?? '');
+                          if (parsed == null) {
+                            return 'Enter a valid number.';
+                          }
+                          if (targetForceMode == TargetForceMode.absoluteKg) {
+                            if (parsed < 0 || parsed > 300) {
+                              return 'Enter target between 0 and 300kg.';
+                            }
+                          } else {
+                            if (parsed <= 0 || parsed > 100) {
+                              return 'Enter target between 0 and 100%.';
+                            }
+                          }
+                          return null;
+                        },
+                      ),
+                      if (isSideSwitching) ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<ExerciseHand>(
+                          initialValue: startingHand,
+                          decoration: const InputDecoration(labelText: 'Starting hand'),
+                          items: const [
+                            DropdownMenuItem(
+                              value: ExerciseHand.left,
+                              child: Text('Left'),
+                            ),
+                            DropdownMenuItem(
+                              value: ExerciseHand.right,
+                              child: Text('Right'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            setDialogState(() {
+                              startingHand = value;
+                            });
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
               actions: [
@@ -161,15 +303,24 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
     }
 
     final int sets = int.parse(setsInput.trim());
-    final int? restOverride = restOverrideInput.trim().isEmpty
-        ? null
-        : int.parse(restOverrideInput.trim());
+    final int rest = int.parse(restInput.trim());
+    final double targetForce = double.parse(targetForceInput.trim());
+    final int? reps = mode == ExerciseMode.reps ? int.parse(repsInput.trim()) : null;
+    final int? duration = mode == ExerciseMode.duration
+        ? int.parse(durationInput.trim())
+        : null;
 
     setState(() {
       final newEntry = WorkoutExerciseEntry(
         exerciseId: selectedExerciseId,
         sets: sets,
-        restOverrideSeconds: restOverride,
+        mode: mode,
+        reps: reps,
+        durationSeconds: duration,
+        restSeconds: rest,
+        targetForceMode: targetForceMode,
+        targetForceValue: targetForce,
+        startingHand: startingHand,
       );
 
       if (index != null) {
@@ -300,7 +451,9 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8.0),
                   title: Text(exercise?.name ?? 'Unknown exercise'),
                   subtitle: Text(
-                    'Sets: ${item.sets}${item.restOverrideSeconds != null ? ' • Rest override: ${item.restOverrideSeconds}s' : ''}',
+                    'Sets: ${item.sets} • Rest: ${item.restSeconds}s\n'
+                    '${item.mode == ExerciseMode.reps ? '${item.reps} reps' : '${item.durationSeconds}s'} • '
+                    '${item.targetForceMode == TargetForceMode.absoluteKg ? '${item.targetForceValue}kg' : '${item.targetForceValue}%'}',
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,

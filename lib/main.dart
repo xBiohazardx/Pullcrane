@@ -1,6 +1,6 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
-import 'package:pullcrane/data/app_repositories.dart';
+import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/ui/app_shell.dart';
 
 Future<void> main() async {
@@ -8,7 +8,7 @@ Future<void> main() async {
   Object? startupError;
   StackTrace? startupStackTrace;
   try {
-    await AppRepositories.init();
+    await AppStores.init();
   } catch (error, stackTrace) {
     startupError = error;
     startupStackTrace = stackTrace;

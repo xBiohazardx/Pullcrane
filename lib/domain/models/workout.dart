@@ -1,19 +1,39 @@
+import 'package:pullcrane/domain/models/exercise.dart';
+
 class WorkoutExerciseEntry {
   WorkoutExerciseEntry({
     required this.exerciseId,
     required this.sets,
-    this.restOverrideSeconds,
+    required this.mode,
+    this.reps,
+    this.durationSeconds,
+    required this.restSeconds,
+    this.targetForceMode = TargetForceMode.absoluteKg,
+    this.targetForceValue = 10,
+    this.startingHand = ExerciseHand.left,
   });
 
   final String exerciseId;
   final int sets;
-  final int? restOverrideSeconds;
+  final ExerciseMode mode;
+  final int? reps;
+  final int? durationSeconds;
+  final int restSeconds;
+  final TargetForceMode targetForceMode;
+  final double targetForceValue;
+  final ExerciseHand startingHand;
 
   Map<String, dynamic> toJson() {
     return {
       'exerciseId': exerciseId,
       'sets': sets,
-      'restOverrideSeconds': restOverrideSeconds,
+      'mode': mode.name,
+      'reps': reps,
+      'durationSeconds': durationSeconds,
+      'restSeconds': restSeconds,
+      'targetForceMode': targetForceMode.name,
+      'targetForceValue': targetForceValue,
+      'startingHand': startingHand.name,
     };
   }
 
@@ -21,7 +41,17 @@ class WorkoutExerciseEntry {
     return WorkoutExerciseEntry(
       exerciseId: json['exerciseId'] as String,
       sets: json['sets'] as int,
-      restOverrideSeconds: json['restOverrideSeconds'] as int?,
+      mode: ExerciseMode.values.byName(json['mode'] as String),
+      reps: json['reps'] as int?,
+      durationSeconds: json['durationSeconds'] as int?,
+      restSeconds: json['restSeconds'] as int? ?? 60,
+      targetForceMode: json['targetForceMode'] != null
+          ? TargetForceMode.values.byName(json['targetForceMode'] as String)
+          : TargetForceMode.absoluteKg,
+      targetForceValue: (json['targetForceValue'] as num?)?.toDouble() ?? 10,
+      startingHand: json['startingHand'] != null
+          ? ExerciseHand.values.byName(json['startingHand'] as String)
+          : ExerciseHand.left,
     );
   }
 }

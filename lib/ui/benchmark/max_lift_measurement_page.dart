@@ -1,7 +1,7 @@
 import 'dart:math';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:pullcrane/data/app_repositories.dart';
+import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/ui/force_input_dummy.dart';
 import 'package:pullcrane/domain/services/bluetooth_manager.dart';
@@ -49,14 +49,14 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
   void initState() {
     super.initState();
     currentExercise = widget.exercise;
-    selectedHand = currentExercise.startingHand;
+    selectedHand = ExerciseHand.left;
     maxLeftForceKg = 0;
     maxRightForceKg = 0;
     _loadSettings();
   }
 
   Future<void> _loadSettings() async {
-    final settings = await AppRepositories.settings.load();
+    final settings = await AppStores.settings.load();
     if (mounted) {
       setState(() {
         forceThresholdKg = settings.forceThresholdKg;
@@ -64,7 +64,7 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
       });
     }
     CraneScaleService.instance.addListener(_onBleForceChanged);
-    selectedHand = widget.exercise.startingHand;
+    selectedHand = ExerciseHand.left;
   }
 
   @override
@@ -146,7 +146,7 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
       maxLiftHistory: newHistory,
     );
 
-    await AppRepositories.exercises.saveExercise(updatedExercise);
+    await AppStores.exercises.saveExercise(updatedExercise);
 
     if (!mounted) return;
 

@@ -1,12 +1,12 @@
-import 'package:pullcrane/data/local/local_database.dart';
+import 'package:pullcrane/data/app_database.dart';
 import 'package:pullcrane/domain/models/app_settings.dart';
 import 'package:sqflite_common/sqlite_api.dart';
 
-class LocalSettingsRepository {
+class SettingsStore {
   Future<AppSettings> load() async {
-    final Database db = await LocalDatabase.instance.database;
+    final Database db = await AppDatabase.instance.database;
     final List<Map<String, Object?>> rows = await db.query(
-      LocalDatabase.settingsTable,
+      AppDatabase.settingsTable,
       where: 'id = ?',
       whereArgs: [1],
     );
@@ -25,9 +25,9 @@ class LocalSettingsRepository {
   }
 
   Future<void> save(AppSettings settings) async {
-    final Database db = await LocalDatabase.instance.database;
+    final Database db = await AppDatabase.instance.database;
     await db.insert(
-      LocalDatabase.settingsTable,
+      AppDatabase.settingsTable,
       {
         'id': 1,
         'force_threshold_kg': settings.forceThresholdKg,
