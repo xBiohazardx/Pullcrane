@@ -38,11 +38,10 @@ class _ExercisesPageState extends State<ExercisesPage> {
       ),
     );
 
-    if (result == null) {
-      return;
+    if (result != null) {
+      await AppStores.exercises.saveExercise(result);
     }
-
-    await AppStores.exercises.saveExercise(result);
+    
     await _reload();
   }
 

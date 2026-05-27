@@ -109,7 +109,7 @@ class _HomePageState extends State<HomePage> {
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
                               const SizedBox(height: 8),
-                              Text('${workout.entries.length} exercise entries'),
+                              Text('${workout.entries.length} exercise entr${workout.entries.length == 1 ? 'y' : 'ies'}'),
                               const SizedBox(height: 12),
                               Align(
                                 alignment: Alignment.centerRight,

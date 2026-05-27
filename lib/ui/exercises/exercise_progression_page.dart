@@ -172,6 +172,7 @@ class _ExerciseProgressionPageState extends State<ExerciseProgressionPage> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: SegmentedButton<TimeFilter>(
+              showSelectedIcon: false,
               segments: const [
                 ButtonSegment(value: TimeFilter.d, label: FittedBox(fit: BoxFit.scaleDown, child: Text('D'))),
                 ButtonSegment(value: TimeFilter.w, label: FittedBox(fit: BoxFit.scaleDown, child: Text('W'))),

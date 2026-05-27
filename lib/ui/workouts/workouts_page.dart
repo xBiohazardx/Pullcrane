@@ -84,7 +84,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
                     final Workout workout = workouts[index];
                     return ListTile(
                       title: Text(workout.name),
-                      subtitle: Text('${workout.entries.length} exercise entries'),
+                      subtitle: Text('${workout.entries.length} exercise entr${workout.entries.length == 1 ? 'y' : 'ies'}'),
                       trailing: IconButton(
                         icon: const Icon(Icons.delete_outline),
                         onPressed: () => _deleteWorkout(workout),
