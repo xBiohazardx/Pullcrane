@@ -20,7 +20,6 @@ class ActiveWorkoutPage extends StatefulWidget {
     required this.exercisesById,
     required this.forceThresholdKg,
     required this.targetHysteresisKg,
-    required this.userMaxLiftKg,
     required this.enableTargetHaptics,
     required this.requireZeroBeforeSetStart,
   });
@@ -29,7 +28,6 @@ class ActiveWorkoutPage extends StatefulWidget {
   final Map<String, Exercise> exercisesById;
   final int forceThresholdKg;
   final int targetHysteresisKg;
-  final int userMaxLiftKg;
   final bool enableTargetHaptics;
   final bool requireZeroBeforeSetStart;
 
@@ -144,7 +142,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       return secondaryMaxLift;
     }
 
-    return widget.userMaxLiftKg;
+    return 60; // default fallback if max lift is not set
   }
 
   int _resolveTargetForceKg(Exercise? exercise) {

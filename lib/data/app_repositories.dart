@@ -17,4 +17,11 @@ class AppRepositories {
     // Warm settings on startup so first read has persisted values available.
     await settings.load();
   }
+
+  static Future<void> reload() async {
+    await LocalDatabase.instance.reloadDatabase();
+    await exercises.init();
+    await workouts.init();
+    await settings.load();
+  }
 }

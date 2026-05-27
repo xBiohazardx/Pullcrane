@@ -66,7 +66,6 @@ class _HomePageState extends State<HomePage> {
           exercisesById: byId,
           forceThresholdKg: settings.forceThresholdKg,
           targetHysteresisKg: settings.targetHysteresisKg,
-          userMaxLiftKg: settings.userMaxLiftKg,
           enableTargetHaptics: settings.enableTargetHaptics,
           requireZeroBeforeSetStart: settings.requireZeroBeforeSetStart,
         ),

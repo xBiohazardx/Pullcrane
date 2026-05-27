@@ -1,6 +1,11 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:pullcrane/data/app_repositories.dart';
 import 'package:pullcrane/domain/models/app_settings.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -13,11 +18,11 @@ class _SettingsPageState extends State<SettingsPage> {
   final GlobalKey<FormState> formKey = GlobalKey<FormState>();
   late final TextEditingController thresholdController;
   late final TextEditingController hysteresisController;
-  late final TextEditingController maxLiftController;
 
   bool enableTargetHaptics = AppSettings.defaults.enableTargetHaptics;
-  bool requireZeroBeforeSetStart =
-      AppSettings.defaults.requireZeroBeforeSetStart;
+  bool requireZeroBeforeSetStart = AppSettings.defaults.requireZeroBeforeSetStart;
+  bool isExternalDbEnabled = false;
+  String? externalDbPath;
   bool isLoading = true;
 
   @override
@@ -25,7 +30,6 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     thresholdController = TextEditingController();
     hysteresisController = TextEditingController();
-    maxLiftController = TextEditingController();
     _load();
   }
 
@@ -33,12 +37,13 @@ class _SettingsPageState extends State<SettingsPage> {
   void dispose() {
     thresholdController.dispose();
     hysteresisController.dispose();
-    maxLiftController.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
     final AppSettings settings = await AppRepositories.settings.load();
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    
     if (!mounted) {
       return;
     }
@@ -46,9 +51,12 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       thresholdController.text = settings.forceThresholdKg.toString();
       hysteresisController.text = settings.targetHysteresisKg.toString();
-      maxLiftController.text = settings.userMaxLiftKg.toString();
       enableTargetHaptics = settings.enableTargetHaptics;
       requireZeroBeforeSetStart = settings.requireZeroBeforeSetStart;
+      
+      externalDbPath = prefs.getString('external_db_dir');
+      isExternalDbEnabled = externalDbPath != null;
+      
       isLoading = false;
     });
   }
@@ -61,7 +69,6 @@ class _SettingsPageState extends State<SettingsPage> {
     final AppSettings settings = AppSettings(
       forceThresholdKg: int.parse(thresholdController.text.trim()),
       targetHysteresisKg: int.parse(hysteresisController.text.trim()),
-      userMaxLiftKg: int.parse(maxLiftController.text.trim()),
       enableTargetHaptics: enableTargetHaptics,
       requireZeroBeforeSetStart: requireZeroBeforeSetStart,
     );
@@ -74,6 +81,81 @@ class _SettingsPageState extends State<SettingsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Settings saved.')),
     );
+  }
+
+  Future<void> _toggleExternalStorage(bool enable) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    
+    if (enable) {
+      if (Platform.isAndroid) {
+        final status = await Permission.manageExternalStorage.request();
+        if (!status.isGranted) {
+          await Permission.storage.request();
+        }
+        
+        if (!await Permission.manageExternalStorage.isGranted && !await Permission.storage.isGranted) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Storage permission is required to save data externally.')));
+          return;
+        }
+      }
+
+      final String? selectedDirectory = await FilePicker.getDirectoryPath();
+      if (selectedDirectory == null) {
+        // User canceled the picker
+        return;
+      }
+
+      await prefs.setString('external_db_dir', selectedDirectory);
+      setState(() {
+        externalDbPath = selectedDirectory;
+        isExternalDbEnabled = true;
+      });
+    } else {
+      await prefs.remove('external_db_dir');
+      setState(() {
+        externalDbPath = null;
+        isExternalDbEnabled = false;
+      });
+    }
+
+    if (!mounted) return;
+
+    // Show loading while databases are being reloaded
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      await AppRepositories.reload();
+      await _load(); // reload settings from the newly active DB
+      
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(enable 
+              ? 'Database location moved to $externalDbPath' 
+              : 'Switched back to internal database'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to switch database: $e')),
+      );
+      // Revert UI state on failure
+      setState(() {
+        if (enable) {
+          isExternalDbEnabled = false;
+          externalDbPath = null;
+          prefs.remove('external_db_dir');
+        } else {
+          isExternalDbEnabled = true;
+          externalDbPath = prefs.getString('external_db_dir');
+        }
+        isLoading = false;
+      });
+    }
   }
 
   @override
@@ -148,35 +230,18 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'Max Lift',
+                    'Storage',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: maxLiftController,
-                    decoration: const InputDecoration(
-                      labelText: 'Current max lift (kg)',
-                    ),
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      final int? parsed = int.tryParse(value ?? '');
-                      if (parsed == null || parsed <= 0 || parsed > 500) {
-                        return 'Enter max lift between 1 and 500 kg.';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Max-lift measurement page will be added in phase 4.'),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.fitness_center),
-                    label: const Text('Measure max lift (coming soon)'),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Save data externally'),
+                    subtitle: Text(isExternalDbEnabled && externalDbPath != null
+                        ? 'Saving to: $externalDbPath'
+                        : 'Choose a folder to save your data to'),
+                    value: isExternalDbEnabled,
+                    onChanged: _toggleExternalStorage,
                   ),
                   const SizedBox(height: 24),
                   FilledButton(
@@ -189,4 +254,3 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 }
-

@@ -1,0 +1,39 @@
+--- lib/ui/settings/settings_page.dart
++++ lib/ui/settings/settings_page.dart
+@@ -1,8 +1,11 @@
++import 'import 'dart:io';
++
+ import 'package:file_picker/file_picker.dart';
+ import 'package:flutter/material.dart';
++import 'package:permission_handler/permission_handler.dart';
+ import 'package:pullcrane/data/app_repositories.dart';
+ import 'package:pullcrane/domain/models/app_settings.dart';
+ import 'package:shared_preferences/shared_preferences.dart';
+ 
+ class SettingsPage extends StatefulWidget {
+   const SettingsPage({super.key});
+@@ -82,12 +85,25 @@
+ 
+   Future<void> _toggleExternalStorage(bool enable) async {
+     final SharedPreferences prefs = await SharedPreferences.getInstance();
+     
+     if (enable) {
++      if (Platform.isAndroid) {
++        final status = await Permission.manageExternalStorage.request();
++        if (!status.isGranted) {
++          await Permission.storage.request();
++        }
++        
++        if (!await Permission.manageExternalStorage.isGranted && !await Permission.storage.isGranted) {
++          if (!mounted) return;
++          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Storage permission is required to save data externally.')));
++          return;
++        }
++      }
++
+       final String? selectedDirectory = await FilePicker.platform?.getDirectoryPath();
+       if (selectedDirectory == null) {
+         // User canceled the picker
+         return;
+       }
+ 

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart' as sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -21,15 +22,50 @@ class LocalDatabase {
 
   Database? _database;
 
+  Future<void> reloadDatabase() async {
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
+    await database; // This will trigger a fresh initialization
+  }
+
+  Future<String> _getDatabasePath(String defaultInternalPath) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? externalDir = prefs.getString('external_db_dir');
+
+    if (externalDir != null && externalDir.isNotEmpty) {
+      final Directory extDir = Directory(externalDir);
+      if (await extDir.exists()) {
+        final String externalDbPath = p.join(externalDir, _dbName);
+        final File externalDbFile = File(externalDbPath);
+        
+        if (!await externalDbFile.exists()) {
+          // Database doesn't exist externally yet, so let's copy the internal one if it exists
+          final File internalDbFile = File(defaultInternalPath);
+          if (await internalDbFile.exists()) {
+            await internalDbFile.copy(externalDbPath);
+          }
+        }
+        return externalDbPath;
+      }
+    }
+    
+    // Fallback to internal
+    return defaultInternalPath;
+  }
+
   Future<Database> get database async {
     if (_database != null) {
       return _database!;
     }
 
     if (_usesSqflitePlugin) {
-      final String path = await _resolveMobileDatabasePath();
+      final String internalPath = await _resolveMobileDatabasePath();
+      final String finalPath = await _getDatabasePath(internalPath);
+      
       _database = await sqflite.openDatabase(
-        path,
+        finalPath,
         version: _dbVersion,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
@@ -42,9 +78,11 @@ class LocalDatabase {
     }
 
     final DatabaseFactory factory = _createFfiDatabaseFactory();
-    final String path = await _resolveFfiDatabasePath(factory);
+    final String internalPath = await _resolveFfiDatabasePath(factory);
+    final String finalPath = await _getDatabasePath(internalPath);
+
     _database = await factory.openDatabase(
-      path,
+      finalPath,
       options: OpenDatabaseOptions(
         version: _dbVersion,
         onConfigure: (db) async {
