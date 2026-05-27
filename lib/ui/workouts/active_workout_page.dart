@@ -166,8 +166,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
 
   int _targetMaxForceKg(Exercise? exercise, WorkoutExerciseEntry? entry) {
     final int baseTarget = _resolveTargetForceKg(exercise, entry);
-    final int baseMax = min(maxForceKg, baseTarget + 5);
-    return min(maxForceKg, baseMax + widget.targetHysteresisKg);
+    return min(maxForceKg, baseTarget + widget.targetHysteresisKg);
   }
 
   String _targetLabel(Exercise? exercise, WorkoutExerciseEntry? entry) {
