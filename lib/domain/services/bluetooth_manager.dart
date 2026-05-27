@@ -18,6 +18,9 @@ class CraneScaleService extends ChangeNotifier {
     _init();
   }
 
+  bool _isSimulated = false;
+  bool get isSimulated => _isSimulated;
+
   ScaleConnectionState _state = ScaleConnectionState.disconnected;
   ScaleConnectionState get state => _state;
 
@@ -183,8 +186,26 @@ class CraneScaleService extends ChangeNotifier {
     _handleDisconnect();
   }
 
+  Future<void> connectSimulated() async {
+    await stopScan();
+    _handleDisconnect(); // clear real connection
+    _isSimulated = true;
+    _state = ScaleConnectionState.connected;
+    notifyListeners();
+  }
+
+  void updateSimulatedForce(int force) {
+    if (_isSimulated && _state == ScaleConnectionState.connected) {
+      if (_currentForce != force) {
+        _currentForce = force;
+        notifyListeners();
+      }
+    }
+  }
+
   void _handleDisconnect() {
     _connectedDevice = null;
+    _isSimulated = false;
     _state = ScaleConnectionState.disconnected;
     _currentForce = 0;
     _scanTimeoutTimer?.cancel();

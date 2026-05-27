@@ -75,37 +75,53 @@ class _BluetoothConnectionSheetState extends State<BluetoothConnectionSheet> {
                   ),
                 ),
                 const Divider(height: 1),
-                if (state == ScaleConnectionState.connected && connectedDevice != null) ...[
+                if (state == ScaleConnectionState.connected && (connectedDevice != null || CraneScaleService.instance.isSimulated)) ...[
                    ListTile(
                      leading: const Icon(Icons.bluetooth_connected, color: Colors.green),
-                     title: Text((connectedDevice.name ?? '').isNotEmpty ? connectedDevice.name! : 'Unknown Device'),
+                     title: Text(CraneScaleService.instance.isSimulated 
+                        ? 'Simulated Device (Finger Drag)' 
+                        : (connectedDevice?.name ?? '').isNotEmpty 
+                            ? connectedDevice!.name! 
+                            : 'Unknown Device'),
                      subtitle: const Text('Connected'),
                      trailing: const Icon(Icons.check, color: Colors.green),
                    ),
                    const Divider(),
                 ],
                 Expanded(
-                  child: results.isEmpty && state != ScaleConnectionState.scanning && state != ScaleConnectionState.connecting
-                      ? const Center(child: Text('No devices found.'))
-                      : ListView.builder(
-                          controller: scrollController,
-                          itemCount: results.length,
-                          itemBuilder: (context, index) {
-                            final device = results[index];
-                            final name = (device.name ?? '').isNotEmpty ? device.name! : 'Unknown Device';
-                            return ListTile(
-                              leading: const Icon(Icons.bluetooth),
-                              title: Text(name),
-                              subtitle: Text(device.deviceId),
-                              trailing: Text('${device.rssi ?? '-'} dBm'),
-                              onTap: state == ScaleConnectionState.connecting
-                                  ? null
-                                  : () async {
-                                      await CraneScaleService.instance.connect(device);
-                                    },
-                            );
+                  child: ListView(
+                    controller: scrollController,
+                    children: [
+                      if (state != ScaleConnectionState.connecting && !CraneScaleService.instance.isSimulated)
+                        ListTile(
+                          leading: const Icon(Icons.touch_app),
+                          title: const Text('Simulated Device (Finger Drag)'),
+                          subtitle: const Text('Testing without a scale'),
+                          onTap: () async {
+                            await CraneScaleService.instance.connectSimulated();
                           },
                         ),
+                      if (results.isEmpty && state != ScaleConnectionState.scanning && state != ScaleConnectionState.connecting)
+                        const Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Center(child: Text('No devices found.')),
+                        ),
+                      ...results.map((device) {
+                        final name = (device.name ?? '').isNotEmpty ? device.name! : 'Unknown Device';
+                        return ListTile(
+                          leading: const Icon(Icons.bluetooth),
+                          title: Text(name),
+                          subtitle: Text(device.deviceId),
+                          trailing: Text('${device.rssi ?? '-'} dBm'),
+                          onTap: state == ScaleConnectionState.connecting
+                              ? null
+                              : () async {
+                                  await CraneScaleService.instance.connect(device);
+                                },
+                        );
+                      }),
+                    ],
+                  ),
                 ),
               ],
             );

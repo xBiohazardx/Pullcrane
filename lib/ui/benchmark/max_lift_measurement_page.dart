@@ -264,17 +264,25 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
           ),
         ],
       ),
-      body: ForceInputDummy(
-        sensitivity: dummySensitivity,
-        minForce: minForceKg,
-        maxForce: maxForceKg,
-        onForceChanged: _onForceChanged,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: ListenableBuilder(
+        listenable: CraneScaleService.instance,
+        builder: (context, _) {
+          final bool isConnected = CraneScaleService.instance.state == ScaleConnectionState.connected;
+          
+          return Stack(
             children: [
-              if (isTwoHandMeasurement) ...[
+              ForceInputDummy(
+                isEnabled: CraneScaleService.instance.isSimulated,
+                sensitivity: dummySensitivity,
+                minForce: minForceKg,
+                maxForce: maxForceKg,
+                onForceChanged: _onForceChanged,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (isTwoHandMeasurement) ...[
                 Text(
                   'Tap a bar to select, then drag anywhere to measure ${_handLabel(selectedHand)} hand force.',
                 ),
@@ -345,6 +353,47 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
           ),
         ),
       ),
+      if (!isConnected)
+        Container(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.bluetooth_disabled, size: 64, color: Colors.orange),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Device Connection Required',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Please connect a device or select the simulated device to continue measurement.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: () => BluetoothConnectionSheet.show(context),
+                    child: const Text('Connect Device'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(null),
+                    child: const Text('Cancel'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  },
+),
     );
   }
 }

@@ -123,6 +123,7 @@ class _ForceTrainingPageState extends State<ForceTrainingPage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: ForceInputDummy(
+        isEnabled: true,
         sensitivity: dummySensitivity,
         minForce: minForceKg,
         maxForce: maxForceKg,
