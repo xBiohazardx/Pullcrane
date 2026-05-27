@@ -1,0 +1,115 @@
+--- lib/ui/workouts/active_workout_page.dart
++++ lib/ui/workouts/active_workout_page.dart
+@@ -538,6 +538,27 @@
+     final int targetMinForce = _targetMinForceKg(exercise, entry);
+     final int targetMaxForce = _targetMaxForceKg(exercise, entry);
+ 
++    String actionLabel = 'Target';
++    String actionValue = '';
++    Color? actionColor;
++
++    if (phase == SessionPhase.activeSet) {
++      if (entry?.mode == ExerciseMode.duration) {
++        actionLabel = 'Hold';
++        actionValue = '${remainingSetSeconds}s';
++      } else {
++        actionLabel = 'Target';
++        actionValue = '${entry?.reps ?? 0} Reps';
++      }
++    } else if (phase == SessionPhase.resting) {
++      actionLabel = 'Rest';
++      actionValue = '${remainingRestSeconds}s';
++      actionColor = Colors.orange;
++    } else if (phase == SessionPhase.waitingForForce) {
++      actionLabel = 'Target';
++      actionValue = entry?.mode == ExerciseMode.duration
++          ? '${entry?.durationSeconds ?? 0}s'
++          : '${entry?.reps ?? 0} Reps';
++    } else {
++      actionLabel = 'Status';
++      actionValue = 'Done';
++    }
++
+     return Scaffold(
+       appBar: AppBar(
+         title: Text('Active: ${widget.workout.name}'),
+@@ -577,14 +598,6 @@
+           child: Column(
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+-              Text(
+-                'Force: ${currentForce}kg',
+-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+-                  color: isInTargetRange ? Colors.green : null,
+-                ),
+-              ),
+-              const SizedBox(height: 16),
+               if (phase == SessionPhase.finished)
+                 const Expanded(
+                   child: Center(
+@@ -619,13 +632,39 @@
+                             Text('Active hand: ${_handLabel(activeHandForUi)}'),
+                           ],
+                           const SizedBox(height: 8),
+-                          Text(
+-                            entry.mode == ExerciseMode.duration
+-                                ? 'Hold ${entry.durationSeconds ?? 0}s'
+-                                : '${entry.reps ?? 0} reps',
++                          Row(
++                            children: [
++                              Expanded(
++                                child: Column(
++                                  crossAxisAlignment: CrossAxisAlignment.start,
++                                  children: [
++                                    Text('LIVE FORCE', style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 1.2)),
++                                    Text(
++                                      '${currentForce}kg',
++                                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
++                                        color: isInTargetRange ? Colors.green : null,
++                                        fontWeight: FontWeight.bold,
++                                      ),
++                                    ),
++                                  ],
++                                ),
++                              ),
++                              Expanded(
++                                child: Column(
++                                  crossAxisAlignment: CrossAxisAlignment.end,
++                                  children: [
++                                    Text(actionLabel.toUpperCase(), style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 1.2)),
++                                    Text(
++                                      actionValue,
++                                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
++                                        color: actionColor,
++                                        fontWeight: FontWeight.bold,
++                                      ),
++                                    ),
++                                  ],
++                                ),
++                              ),
++                            ],
+                           ),
+                           const SizedBox(height: 12),
+                           Expanded(
+@@ -663,22 +702,10 @@
+                                   : 'Release to 0 kg first, then apply at least ${widget.forceThresholdKg} kg to start.',
+                               style: Theme.of(context).textTheme.bodyMedium,
+                             ),
+-                          if (phase == SessionPhase.activeSet &&
+-                              entry.mode == ExerciseMode.duration)
+-                            Text(
+-                              'Remaining hold: $remainingSetSeconds s',
+-                              style: Theme.of(context).textTheme.titleMedium,
+-                            ),
+-                          if (phase == SessionPhase.resting)
+-                            Text(
+-                              'Rest: $remainingRestSeconds s',
+-                              style: Theme.of(context).textTheme.titleMedium,
+-                            ),
+                           if (phase == SessionPhase.resting && suggestedSwitchHand != null)
+                             Text(
+                               'Preparing ${_handLabel(suggestedSwitchHand!)} hand...',
+                               style: Theme.of(context).textTheme.bodyMedium,
+                             ),
+                         ],
+                         ),

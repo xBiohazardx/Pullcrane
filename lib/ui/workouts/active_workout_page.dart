@@ -10,6 +10,7 @@ import 'package:pullcrane/ui/force_chart.dart';
 import 'package:pullcrane/ui/force_input_dummy.dart';
 import 'package:pullcrane/domain/services/bluetooth_manager.dart';
 import 'package:pullcrane/ui/bluetooth_connection_sheet.dart';
+import 'animated_instruction_overlay.dart';
 
 enum SessionPhase { waitingForForce, activeSet, resting, finished }
 
@@ -190,7 +191,10 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   }
 
   void _syncTargetFeedback(int force) {
-    final bool nextInTargetRange = _isInsideTarget(force);
+    final bool isForceInTarget = _isInsideTarget(force);
+    final bool shouldVibrate = (phase == SessionPhase.activeSet || (phase == SessionPhase.waitingForForce && setStartArmed));
+    final bool nextInTargetRange = isForceInTarget && shouldVibrate;
+
     if (nextInTargetRange == isInTargetRange) {
       return;
     }
@@ -386,6 +390,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         phase = SessionPhase.activeSet;
         setStartArmed = false;
       });
+      _syncTargetFeedback(currentForce);
+      _syncTargetFeedback(currentForce);
     }
   }
 
@@ -398,6 +404,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     setState(() {
       phase = SessionPhase.activeSet;
     });
+    _syncTargetFeedback(currentForce);
+    _syncTargetFeedback(currentForce);
 
     phaseTimer?.cancel();
     phaseTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -458,6 +466,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       suggestedSwitchHand = switchTarget;
       setStartArmed = false;
     });
+    _syncTargetFeedback(currentForce);
+    _syncTargetFeedback(currentForce);
 
     phaseTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) {
@@ -502,6 +512,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         pendingHandInSet = null;
         setStartArmed = false;
       });
+      _syncTargetFeedback(currentForce);
+      _syncTargetFeedback(currentForce);
       return;
     }
 
@@ -528,6 +540,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       setStartArmed = false;
     });
     _prepareCurrentSet();
+    _syncTargetFeedback(currentForce);
+    _syncTargetFeedback(currentForce);
   }
 
   @override
@@ -535,8 +549,36 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     final WorkoutExerciseEntry? entry = currentEntry;
     final Exercise? exercise = currentExercise;
     final ExerciseHand? activeHandForUi = activeHand;
+
     final int targetMinForce = _targetMinForceKg(exercise, entry);
     final int targetMaxForce = _targetMaxForceKg(exercise, entry);
+
+    String actionLabel = 'Target';
+    String actionValue = '';
+    Color? actionColor;
+
+    if (phase == SessionPhase.activeSet) {
+      if (entry?.mode == ExerciseMode.duration) {
+        actionLabel = 'Hold';
+        actionValue = '${remainingSetSeconds}s';
+      } else {
+        actionLabel = 'Target';
+        actionValue = '${entry?.reps ?? 0} Reps';
+      }
+    } else if (phase == SessionPhase.resting) {
+      actionLabel = 'Rest';
+      actionValue = '${remainingRestSeconds}s';
+      actionColor = Colors.orange;
+    } else if (phase == SessionPhase.waitingForForce) {
+      actionLabel = 'Target';
+      actionValue = entry?.mode == ExerciseMode.duration
+          ? '${entry?.durationSeconds ?? 0}s'
+          : '${entry?.reps ?? 0} Reps';
+    } else {
+      actionLabel = 'Status';
+      actionValue = 'Done';
+    }
+
 
     return Scaffold(
       appBar: AppBar(
@@ -576,13 +618,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Force: ${currentForce}kg',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: isInTargetRange ? Colors.green : null,
-                ),
-              ),
-              const SizedBox(height: 16),
+
               if (phase == SessionPhase.finished)
                 const Expanded(
                   child: Center(
@@ -615,22 +651,78 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                           Text('Set $currentSet/${entry.sets}'),
                           if (activeHandForUi != null) ...[
                             const SizedBox(height: 4),
-                            Text('Active hand: ${_handLabel(activeHandForUi)}'),
+                            Visibility(
+                              visible: phase != SessionPhase.resting,
+                              maintainSize: true,
+                              maintainAnimation: true,
+                              maintainState: true,
+                              child: Text('Active hand: ${_handLabel(activeHandForUi)}'),
+                            ),
                           ],
                           const SizedBox(height: 8),
-                          Text(
-                            entry.mode == ExerciseMode.duration
-                                ? 'Hold ${entry.durationSeconds ?? 0}s'
-                                : '${entry.reps ?? 0} reps',
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('LIVE FORCE', style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 1.2)),
+                                    Text(
+                                      '${currentForce}kg',
+                                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                                        color: isInTargetRange ? Colors.green : null,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(actionLabel.toUpperCase(), style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 1.2)),
+                                    Text(
+                                      actionValue,
+                                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                                        color: actionColor,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 12),
                           Expanded(
-                            child: ForceChart(
-                              dataPoints: dataPoints,
-                              chartMaxForce: maxForceKg,
-                              targetMinForce: targetMinForce,
-                              targetMaxForce: targetMaxForce,
-                              showTargetArea: phase != SessionPhase.resting,
+                            child: Stack(
+                              children: [
+                                ForceChart(
+                                  dataPoints: dataPoints,
+                                  chartMaxForce: maxForceKg,
+                                  targetMinForce: targetMinForce,
+                                  targetMaxForce: targetMaxForce,
+                                  showTargetArea: phase != SessionPhase.resting,
+                                ),
+                                AnimatedInstructionOverlay(
+                                  mainText: (phase == SessionPhase.waitingForForce && setStartArmed)
+                                      ? 'PULL'
+                                      : 'RELEASE',
+                                  subText: (activeHandForUi != null && phase == SessionPhase.waitingForForce && setStartArmed)
+                                      ? '${_handLabel(activeHandForUi)} Hand'
+                                      : null,
+                                  backgroundColor: (phase == SessionPhase.waitingForForce && setStartArmed)
+                                      ? Theme.of(context).colorScheme.primaryContainer
+                                      : Theme.of(context).colorScheme.secondaryContainer,
+                                  textColor: (phase == SessionPhase.waitingForForce && setStartArmed)
+                                      ? Theme.of(context).colorScheme.onPrimaryContainer
+                                      : Theme.of(context).colorScheme.onSecondaryContainer,
+                                  isVisible: (phase == SessionPhase.waitingForForce && !setStartArmed) ||
+                                      (phase == SessionPhase.waitingForForce && setStartArmed) ||
+                                      (phase != SessionPhase.activeSet && currentForce > 0),
+                                ),
+                              ],
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -640,17 +732,6 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                                   ? 'Apply at least ${widget.forceThresholdKg} kg to start the set.'
                                   : 'Release to 0 kg first, then apply at least ${widget.forceThresholdKg} kg to start.',
                               style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          if (phase == SessionPhase.activeSet &&
-                              entry.mode == ExerciseMode.duration)
-                            Text(
-                              'Remaining hold: $remainingSetSeconds s',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          if (phase == SessionPhase.resting)
-                            Text(
-                              'Rest: $remainingRestSeconds s',
-                              style: Theme.of(context).textTheme.titleMedium,
                             ),
                           if (phase == SessionPhase.resting && suggestedSwitchHand != null)
                             Text(

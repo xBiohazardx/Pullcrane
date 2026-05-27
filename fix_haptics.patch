@@ -1,0 +1,69 @@
+--- lib/ui/workouts/active_workout_page.dart
++++ lib/ui/workouts/active_workout_page.dart
+@@ -191,7 +191,10 @@
+   }
+ 
+   void _syncTargetFeedback(int force) {
+-    final bool nextInTargetRange = _isInsideTarget(force);
++    final bool isForceInTarget = _isInsideTarget(force);
++    final bool shouldVibrate = (phase == SessionPhase.activeSet || (phase == SessionPhase.waitingForForce && setStartArmed));
++    final bool nextInTargetRange = isForceInTarget && shouldVibrate;
++
+     if (nextInTargetRange == isInTargetRange) {
+       return;
+     }
+@@ -387,6 +390,7 @@
+         phase = SessionPhase.activeSet;
+         setStartArmed = false;
+       });
++      _syncTargetFeedback(currentForce);
+     }
+   }
+ 
+@@ -399,6 +403,7 @@
+     setState(() {
+       phase = SessionPhase.activeSet;
+     });
++    _syncTargetFeedback(currentForce);
+ 
+     phaseTimer?.cancel();
+     phaseTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+@@ -459,6 +464,7 @@
+       suggestedSwitchHand = switchTarget;
+       setStartArmed = false;
+     });
++    _syncTargetFeedback(currentForce);
+ 
+     phaseTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+       if (!mounted) {
+@@ -491,6 +497,7 @@
+         setStartArmed = false;
+       });
+       _prepareCurrentSet();
++      _syncTargetFeedback(currentForce);
+       return;
+     }
+ 
+@@ -503,6 +510,7 @@
+         setStartArmed = false;
+       });
++      _syncTargetFeedback(currentForce);
+       return;
+     }
+ 
+@@ -517,6 +525,7 @@
+         setStartArmed = false;
+       });
+       _prepareCurrentSet();
++      _syncTargetFeedback(currentForce);
+       return;
+     }
+ 
+@@ -528,6 +537,7 @@
+       setStartArmed = false;
+     });
+     _prepareCurrentSet();
++    _syncTargetFeedback(currentForce);
+   }
+ 
+   @override
