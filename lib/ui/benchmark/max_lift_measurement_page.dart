@@ -1,5 +1,3 @@
-import 'dart:math';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
@@ -149,190 +147,10 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
     await AppStores.exercises.saveExercise(updatedExercise);
 
     if (!mounted) return;
-
-    setState(() {
-      currentExercise = updatedExercise;
-      maxLeftForceKg = 0;
-      maxRightForceKg = 0;
-      currentLeftForceKg = 0;
-      currentRightForceKg = 0;
-    });
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Max lift saved!')));
+    
+    Navigator.of(context).pop(updatedExercise);
   }
 
-  Widget _buildProgressionChart() {
-    if (currentExercise.maxLiftHistory.isEmpty) {
-      return const Center(child: Text('No progression data yet.'));
-    }
-
-    final Map<String, MaxLiftRecord> latestPerDay = {};
-    for (final record in currentExercise.maxLiftHistory) {
-      final dateKey =
-          '${record.date.year}-${record.date.month.toString().padLeft(2, '0')}-${record.date.day.toString().padLeft(2, '0')}';
-      if (!latestPerDay.containsKey(dateKey) ||
-          record.date.isAfter(latestPerDay[dateKey]!.date)) {
-        latestPerDay[dateKey] = record;
-      }
-    }
-
-    final filteredHistory = latestPerDay.values.toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
-
-    final DateTime firstDateRaw = filteredHistory.first.date;
-    final DateTime firstDateDay = DateTime(
-      firstDateRaw.year,
-      firstDateRaw.month,
-      firstDateRaw.day,
-    );
-
-    List<FlSpot> leftSpots = [];
-    List<FlSpot> rightSpots = [];
-
-    double maxY = 10; // minimum chart height
-    double maxX = 0;
-
-    for (int i = 0; i < filteredHistory.length; i++) {
-      final record = filteredHistory[i];
-      final recordDay = DateTime(
-        record.date.year,
-        record.date.month,
-        record.date.day,
-      );
-      final double days = recordDay.difference(firstDateDay).inDays.toDouble();
-
-      leftSpots.add(FlSpot(days, record.leftKg.toDouble()));
-      rightSpots.add(FlSpot(days, record.rightKg.toDouble()));
-
-      maxY = max(maxY, record.leftKg.toDouble());
-      maxY = max(maxY, record.rightKg.toDouble());
-      maxX = max(maxX, days);
-    }
-
-    maxY = (maxY * 1.2).ceilToDouble(); // Add some padding
-    if (maxX == 0) {
-      maxX = 1.0; // Pad X axis if only one point or all on the same day
-    }
-
-    final ColorScheme colors = Theme.of(context).colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (isTwoHandMeasurement) ...[
-              _buildLegendItem('Left', colors.primary),
-              const SizedBox(width: 16),
-              _buildLegendItem('Right', colors.secondary),
-            ] else ...[
-              _buildLegendItem('Force', colors.primary),
-            ],
-          ],
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: LineChart(
-            LineChartData(
-              minX: 0,
-              maxX: maxX,
-              minY: 0,
-              maxY: maxY,
-              lineBarsData: [
-                if (!isTwoHandMeasurement || leftSpots.any((s) => s.y > 0))
-                  LineChartBarData(
-                    spots: leftSpots,
-                    isCurved: true,
-                    color: colors.primary,
-                    barWidth: 3,
-                    dotData: const FlDotData(show: true),
-                  ),
-                if (isTwoHandMeasurement && rightSpots.any((s) => s.y > 0))
-                  LineChartBarData(
-                    spots: rightSpots,
-                    isCurved: true,
-                    color: colors.secondary,
-                    barWidth: 3,
-                    dotData: const FlDotData(show: true),
-                  ),
-              ],
-              titlesData: FlTitlesData(
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    interval: 1,
-                    getTitlesWidget: (value, meta) {
-                      final bool hasPoint = filteredHistory.any((r) {
-                        final rd = DateTime(
-                          r.date.year,
-                          r.date.month,
-                          r.date.day,
-                        );
-                        return rd.difference(firstDateDay).inDays.toDouble() ==
-                            value;
-                      });
-
-                      if (!hasPoint) return const SizedBox.shrink();
-
-                      final date = firstDateDay.add(
-                        Duration(days: value.toInt()),
-                      );
-                      final dayStr = date.day.toString().padLeft(2, '0');
-                      final monthStr = date.month.toString().padLeft(2, '0');
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Text(
-                          '$dayStr.$monthStr.',
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 32,
-                    getTitlesWidget: (value, meta) {
-                      return Text(
-                        value.toInt().toString(),
-                        style: const TextStyle(fontSize: 10),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              gridData: const FlGridData(show: true, drawVerticalLine: false),
-              borderData: FlBorderData(show: false),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLegendItem(String label, Color color) {
-    return Row(
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 12)),
-      ],
-    );
-  }
 
   Widget _buildForceBar({
     required BuildContext context,
@@ -506,22 +324,19 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
                 ),
               ],
               const SizedBox(height: 24),
-              Expanded(child: _buildProgressionChart()),
-              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () =>
-                          Navigator.of(context).pop(currentExercise),
-                      child: const Text('Close'),
+                      onPressed: () => Navigator.of(context).pop(null),
+                      child: const Text('Cancel'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton(
                       onPressed: canSave ? _saveMaxLift : null,
-                      child: const Text('Save max lift'),
+                      child: const Text('Save & Close'),
                     ),
                   ),
                 ],

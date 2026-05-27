@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'benchmark/benchmark_page.dart';
 import 'exercises/exercises_page.dart';
 import 'home/home_page.dart';
 import 'settings/settings_page.dart';
@@ -16,13 +15,11 @@ class _AppShellState extends State<AppShell> {
   int currentIndex = 0;
   int homeRefreshTick = 0;
   int settingsRefreshTick = 0;
-  int benchmarkRefreshTick = 0;
 
   List<Widget> get pages => <Widget>[
     HomePage(key: ValueKey<int>(homeRefreshTick)),
     const WorkoutsPage(),
     const ExercisesPage(),
-    BenchmarkPage(key: ValueKey<int>(benchmarkRefreshTick)),
     SettingsPage(key: ValueKey<int>(settingsRefreshTick)),
   ];
 
@@ -38,9 +35,6 @@ class _AppShellState extends State<AppShell> {
               homeRefreshTick++;
             }
             if (index == 3) {
-              benchmarkRefreshTick++;
-            }
-            if (index == 4) {
               settingsRefreshTick++;
             }
             currentIndex = index;
@@ -63,11 +57,6 @@ class _AppShellState extends State<AppShell> {
             label: 'Exercises',
           ),
           NavigationDestination(
-            icon: Icon(Icons.speed_outlined),
-            selectedIcon: Icon(Icons.speed),
-            label: 'Benchmark',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings),
             label: 'Settings',
@@ -77,3 +66,4 @@ class _AppShellState extends State<AppShell> {
     );
   }
 }
+
