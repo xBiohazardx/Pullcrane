@@ -3,35 +3,20 @@ import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:sqflite_common/sqlite_api.dart';
 
 class ExerciseStore {
-  static const String _defaultRestExerciseId = 'default_rest';
-
   Future<void> init() async {
     final Database db = await AppDatabase.instance.database;
-    final List<Map<String, Object?>> rows = await db.query(
+
+    // Clean up the old default rest exercise if it still exists
+    await db.delete(
       AppDatabase.exercisesTable,
-      columns: <String>['id'],
       where: 'id = ?',
-      whereArgs: <Object?>[_defaultRestExerciseId],
-      limit: 1,
+      whereArgs: <Object?>['default_rest'],
     );
-
-    if (rows.isNotEmpty) {
-      return;
-    }
-
-    final Exercise defaultRestExercise = Exercise(
-      id: _defaultRestExerciseId,
-      name: 'Rest',
-      description: 'Passive rest between active sets.',
-      isSideSwitching: false,
-      isDefault: true,
-    );
-    await saveExercise(defaultRestExercise);
   }
 
   Future<List<Exercise>> listExercises() async {
     final Database db = await AppDatabase.instance.database;
-    
+
     final List<Map<String, Object?>> exerciseRows = await db.query(
       AppDatabase.exercisesTable,
       orderBy: 'LOWER(name) ASC',
@@ -63,7 +48,6 @@ class ExerciseStore {
         maxLiftLeftKg: row['max_lift_left_kg'] as int,
         maxLiftRightKg: row['max_lift_right_kg'] as int,
         maxLiftHistory: historyMap[id] ?? <MaxLiftRecord>[],
-        isDefault: (row['is_default'] as int) == 1,
       );
     }).toList();
   }
@@ -71,19 +55,31 @@ class ExerciseStore {
   Future<void> saveExercise(Exercise exercise) async {
     final Database db = await AppDatabase.instance.database;
     await db.transaction((Transaction txn) async {
-      await txn.insert(
+      final List<Map<String, Object?>> existing = await txn.query(
         AppDatabase.exercisesTable,
-        <String, Object?>{
-          'id': exercise.id,
-          'name': exercise.name,
-          'description': exercise.description,
-          'is_side_switching': exercise.isSideSwitching ? 1 : 0,
-          'max_lift_left_kg': exercise.maxLiftLeftKg,
-          'max_lift_right_kg': exercise.maxLiftRightKg,
-          'is_default': exercise.isDefault ? 1 : 0,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
+        where: 'id = ?',
+        whereArgs: <Object?>[exercise.id],
       );
+
+      final Map<String, Object?> row = <String, Object?>{
+        'id': exercise.id,
+        'name': exercise.name,
+        'description': exercise.description,
+        'is_side_switching': exercise.isSideSwitching ? 1 : 0,
+        'max_lift_left_kg': exercise.maxLiftLeftKg,
+        'max_lift_right_kg': exercise.maxLiftRightKg,
+      };
+
+      if (existing.isNotEmpty) {
+        await txn.update(
+          AppDatabase.exercisesTable,
+          row,
+          where: 'id = ?',
+          whereArgs: <Object?>[exercise.id],
+        );
+      } else {
+        await txn.insert(AppDatabase.exercisesTable, row);
+      }
 
       await txn.delete(
         AppDatabase.exerciseHistoryTable,
@@ -92,15 +88,12 @@ class ExerciseStore {
       );
 
       for (final MaxLiftRecord record in exercise.maxLiftHistory) {
-        await txn.insert(
-          AppDatabase.exerciseHistoryTable,
-          <String, Object?>{
-            'exercise_id': exercise.id,
-            'date': record.date.toIso8601String(),
-            'left_kg': record.leftKg,
-            'right_kg': record.rightKg,
-          },
-        );
+        await txn.insert(AppDatabase.exerciseHistoryTable, <String, Object?>{
+          'exercise_id': exercise.id,
+          'date': record.date.toIso8601String(),
+          'left_kg': record.leftKg,
+          'right_kg': record.rightKg,
+        });
       }
     });
   }
@@ -116,7 +109,7 @@ class ExerciseStore {
       );
       await txn.delete(
         AppDatabase.exercisesTable,
-        where: 'id = ? AND is_default = 0',
+        where: 'id = ?',
         whereArgs: <Object?>[id],
       );
     });

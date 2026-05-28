@@ -39,7 +39,7 @@ class AppDatabase {
       if (await extDir.exists()) {
         final String externalDbPath = p.join(externalDir, _dbName);
         final File externalDbFile = File(externalDbPath);
-        
+
         if (!await externalDbFile.exists()) {
           // Database doesn't exist externally yet, so let's copy the internal one if it exists
           final File internalDbFile = File(defaultInternalPath);
@@ -50,7 +50,7 @@ class AppDatabase {
         return externalDbPath;
       }
     }
-    
+
     // Fallback to internal
     return defaultInternalPath;
   }
@@ -63,7 +63,7 @@ class AppDatabase {
     if (_usesSqflitePlugin) {
       final String internalPath = await _resolveMobileDatabasePath();
       final String finalPath = await _getDatabasePath(internalPath);
-      
+
       _database = await sqflite.openDatabase(
         finalPath,
         version: _dbVersion,
@@ -165,8 +165,7 @@ class AppDatabase {
         description TEXT NOT NULL,
         is_side_switching INTEGER NOT NULL,
         max_lift_left_kg INTEGER NOT NULL,
-        max_lift_right_kg INTEGER NOT NULL,
-        is_default INTEGER NOT NULL DEFAULT 0
+        max_lift_right_kg INTEGER NOT NULL
       )
     ''');
 

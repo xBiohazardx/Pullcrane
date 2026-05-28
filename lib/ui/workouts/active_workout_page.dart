@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:confetti/confetti.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -64,6 +65,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     ExerciseHand.left: 0,
     ExerciseHand.right: 0,
   };
+  late final ConfettiController _confettiController;
 
   ExerciseHand _oppositeHand(ExerciseHand hand) {
     return hand == ExerciseHand.left ? ExerciseHand.right : ExerciseHand.left;
@@ -235,6 +237,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   @override
   void initState() {
     super.initState();
+    _confettiController = ConfettiController(duration: const Duration(seconds: 3));
     CraneScaleService.instance.addListener(_onBleForceChanged);
     chartTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
       if (!mounted) {
@@ -291,6 +294,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     phaseTimer?.cancel();
     targetVibrationTimer?.cancel();
     CraneScaleService.instance.removeListener(_onBleForceChanged);
+    _confettiController.dispose();
     super.dispose();
   }
 
@@ -309,6 +313,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     if (entry == null) {
       setState(() {
         phase = SessionPhase.finished;
+        _confettiController.play();
         suggestedSwitchHand = null;
         activeHand = null;
         pendingHandInSet = null;
@@ -515,6 +520,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     if (entry == null) {
       setState(() {
         phase = SessionPhase.finished;
+        _confettiController.play();
         suggestedSwitchHand = null;
         activeHand = null;
         pendingHandInSet = null;
@@ -636,12 +642,33 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
                     children: [
 
                       if (phase == SessionPhase.finished)
-                const Expanded(
-                  child: Center(
-                    child: Text('Workout complete.'),
-                  ),
-                )
-              else if (entry == null)
+                        Expanded(
+                          child: Stack(
+                            alignment: Alignment.topCenter,
+                            children: [
+                              const Center(
+                                child: Text('Workout complete.'),
+                              ),
+                              ConfettiWidget(
+                                confettiController: _confettiController,
+                                blastDirectionality: BlastDirectionality.explosive,
+                                particleDrag: 0.05,
+                                emissionFrequency: 0.05,
+                                numberOfParticles: 50,
+                                gravity: 0.2,
+                                shouldLoop: false,
+                                colors: const [
+                                  Colors.green,
+                                  Colors.blue,
+                                  Colors.pink,
+                                  Colors.orange,
+                                  Colors.purple
+                                ],
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (entry == null)
                 const Expanded(
                   child: Center(
                     child: Text('No entries in this workout.'),

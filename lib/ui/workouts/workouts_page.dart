@@ -38,7 +38,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
   }
 
   Future<void> _openForm({Workout? initial}) async {
-    _reload();
+    await _reload();
     final Workout? result = await Navigator.of(context).push<Workout>(
       MaterialPageRoute(
         builder: (_) => WorkoutFormPage(
@@ -68,10 +68,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
         title: const Text('Workouts'),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          await _reload();
-          _openForm();
-        },
+        onPressed: _openForm,
         child: const Icon(Icons.add),
       ),
       body: isLoading

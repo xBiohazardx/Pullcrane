@@ -41,7 +41,6 @@ class Exercise {
     this.maxLiftLeftKg = 0,
     this.maxLiftRightKg = 0,
     this.maxLiftHistory = const [],
-    this.isDefault = false,
   });
 
   final String id;
@@ -51,7 +50,6 @@ class Exercise {
   final int maxLiftLeftKg;
   final int maxLiftRightKg;
   final List<MaxLiftRecord> maxLiftHistory;
-  final bool isDefault;
 
   Exercise copyWith({
     String? id,
@@ -61,7 +59,6 @@ class Exercise {
     int? maxLiftLeftKg,
     int? maxLiftRightKg,
     List<MaxLiftRecord>? maxLiftHistory,
-    bool? isDefault,
   }) {
     return Exercise(
       id: id ?? this.id,
@@ -71,7 +68,6 @@ class Exercise {
       maxLiftLeftKg: maxLiftLeftKg ?? this.maxLiftLeftKg,
       maxLiftRightKg: maxLiftRightKg ?? this.maxLiftRightKg,
       maxLiftHistory: maxLiftHistory ?? this.maxLiftHistory,
-      isDefault: isDefault ?? this.isDefault,
     );
   }
 
@@ -84,7 +80,6 @@ class Exercise {
       'maxLiftLeftKg': maxLiftLeftKg,
       'maxLiftRightKg': maxLiftRightKg,
       'maxLiftHistory': maxLiftHistory.map((r) => r.toJson()).toList(),
-      'isDefault': isDefault,
     };
   }
 
@@ -101,7 +96,6 @@ class Exercise {
               ?.map((e) => MaxLiftRecord.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      isDefault: json['isDefault'] as bool? ?? false,
     );
   }
 }

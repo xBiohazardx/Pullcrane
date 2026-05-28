@@ -41,7 +41,7 @@ class _ExercisesPageState extends State<ExercisesPage> {
     if (result != null) {
       await AppStores.exercises.saveExercise(result);
     }
-    
+
     await _reload();
   }
 
@@ -53,9 +53,7 @@ class _ExercisesPageState extends State<ExercisesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Exercises'),
-      ),
+      appBar: AppBar(title: const Text('Exercises')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openForm(),
         child: const Icon(Icons.add),
@@ -63,28 +61,26 @@ class _ExercisesPageState extends State<ExercisesPage> {
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : exercises.isEmpty
-              ? const Center(child: Text('No exercises yet.'))
-              : ListView.builder(
-                  itemCount: exercises.length,
-                  itemBuilder: (context, index) {
-                    final Exercise exercise = exercises[index];
-                    final String handInfo = exercise.isSideSwitching
-                        ? 'Alternating hands'
-                        : 'Single configuration';
+          ? const Center(child: Text('No exercises yet.'))
+          : ListView.builder(
+              itemCount: exercises.length,
+              itemBuilder: (context, index) {
+                final Exercise exercise = exercises[index];
+                final String handInfo = exercise.isSideSwitching
+                    ? 'Alternating hands'
+                    : 'Single configuration';
 
-                    return ListTile(
-                      title: Text(exercise.name),
-                      subtitle: Text('${exercise.description}\n$handInfo'),
-                      trailing: exercise.isDefault
-                          ? const Icon(Icons.lock_outline)
-                          : IconButton(
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _deleteExercise(exercise),
-                            ),
-                      onTap: exercise.isDefault ? null : () => _openForm(initial: exercise),
-                    );
-                  },
-                ),
+                return ListTile(
+                  title: Text(exercise.name),
+                  subtitle: Text('${exercise.description}\n$handInfo'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _deleteExercise(exercise),
+                  ),
+                  onTap: () => _openForm(initial: exercise),
+                );
+              },
+            ),
     );
   }
 }

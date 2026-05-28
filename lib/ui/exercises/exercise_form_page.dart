@@ -27,7 +27,9 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
     currentExercise = widget.initialExercise;
     isSideSwitching = currentExercise?.isSideSwitching ?? false;
     nameController = TextEditingController(text: currentExercise?.name ?? '');
-    descriptionController = TextEditingController(text: currentExercise?.description ?? '');
+    descriptionController = TextEditingController(
+      text: currentExercise?.description ?? '',
+    );
   }
 
   @override
@@ -42,7 +44,8 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
       return;
     }
 
-    final String id = currentExercise?.id ?? DateTime.now().microsecondsSinceEpoch.toString();
+    final String id =
+        currentExercise?.id ?? DateTime.now().microsecondsSinceEpoch.toString();
 
     final Exercise exercise = Exercise(
       id: id,
@@ -52,7 +55,6 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
       maxLiftLeftKg: currentExercise?.maxLiftLeftKg ?? 0,
       maxLiftRightKg: currentExercise?.maxLiftRightKg ?? 0,
       maxLiftHistory: currentExercise?.maxLiftHistory ?? [],
-      isDefault: currentExercise?.isDefault ?? false,
     );
 
     Navigator.of(context).pop(exercise);
@@ -67,7 +69,7 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
 
   Future<void> _openBenchmark() async {
     if (currentExercise == null) return;
-    
+
     final Exercise? updated = await Navigator.of(context).push<Exercise>(
       MaterialPageRoute(
         builder: (_) => MaxLiftMeasurementPage(exercise: currentExercise!),
@@ -76,15 +78,15 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
 
     if (updated != null) {
       // Benchmark page already saved to db, just sync state
-      // Actually, since we want to be safe, we re-fetch the exercise from the DB 
+      // Actually, since we want to be safe, we re-fetch the exercise from the DB
       // just in case we need fresh data. But `updated` contains the fresh data!
       setState(() {
         currentExercise = updated;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Benchmark saved.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Benchmark saved.')));
       }
     }
   }
@@ -133,14 +135,16 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
               value: isSideSwitching,
               contentPadding: EdgeInsets.zero,
               title: const Text('Alternate hands each set'),
-              subtitle: const Text('App guides hand switching and rest carryover.'),
+              subtitle: const Text(
+                'App guides hand switching and rest carryover.',
+              ),
               onChanged: (value) {
                 setState(() {
                   isSideSwitching = value;
                 });
               },
             ),
-            
+
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _submit,
@@ -197,6 +201,3 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
     );
   }
 }
-
-
-
