@@ -1,9 +1,8 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:universal_ble/universal_ble.dart';
+import 'package:pullcrane/domain/services/fast_ble_scanner.dart';
 
 enum ScaleConnectionState { disconnected, scanning, connecting, connected }
 
@@ -31,8 +30,10 @@ class CraneScaleService extends ChangeNotifier {
   int get currentForce => _currentForce;
 
   StreamSubscription<BleDevice>? _scanSubscription;
+  FastBleScanner? _fastScanner;
   Timer? _scanTimeoutTimer;
   bool _isScanning = false;
+  bool _fastScanActive = false;
 
   final Map<String, BleDevice> _scanResultById = <String, BleDevice>{};
   List<BleDevice> _scanResults = [];
@@ -45,7 +46,6 @@ class CraneScaleService extends ChangeNotifier {
         return;
       }
 
-      bool hasUpdates = false;
       _scanResultById[device.deviceId] = device;
 
       if (_connectedDevice == null) {
@@ -55,10 +55,10 @@ class CraneScaleService extends ChangeNotifier {
             final int bRssi = b.rssi ?? -999;
             return bRssi.compareTo(aRssi);
           });
-        hasUpdates = true;
+        notifyListeners();
       }
 
-      if (_connectedDevice?.deviceId == device.deviceId) {
+      if (!_fastScanActive && _connectedDevice?.deviceId == device.deviceId) {
         _connectedDevice = device;
         final int? parsedForce = _parseWeightFromManufacturerData(device);
         if (parsedForce != null) {
@@ -68,12 +68,8 @@ class CraneScaleService extends ChangeNotifier {
           if (parsedForce != _currentForce) {
             _currentForce = parsedForce;
           }
-          hasUpdates = true;
+          notifyListeners();
         }
-      }
-
-      if (hasUpdates) {
-        notifyListeners();
       }
     });
 
@@ -108,7 +104,9 @@ class CraneScaleService extends ChangeNotifier {
 
     try {
       await _ensureBlePermissions();
-      await UniversalBle.startScan();
+      await UniversalBle.startScan(
+        scanFilter: ScanFilter(withNamePrefix: [_targetDeviceName]),
+      );
       _isScanning = true;
       _scanTimeoutTimer?.cancel();
       _scanTimeoutTimer = Timer(const Duration(seconds: 15), () {
@@ -144,21 +142,55 @@ class CraneScaleService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // WH-C06 data is read from advertisement manufacturer data.
-      // Keep scanning with duplicates so force updates continue to stream.
-      if (!_isScanning) {
-        await startScan();
-      }
+      await stopScan();
+      await _startFastScanner(device.deviceId);
     } catch (e) {
-      debugPrint("Connection error: $e");
-      _handleDisconnect();
+      debugPrint("Fast scanner failed, falling back to advertisements: $e");
+      _fastScanActive = false;
+      _fallbackToAdvertisements();
+    }
+  }
+
+  Future<void> _startFastScanner(String deviceId) async {
+    _fastScanner = FastBleScanner(
+      onForceChanged: (int force) {
+        if (_currentForce != force) {
+          _currentForce = force;
+          if (_state == ScaleConnectionState.connecting) {
+            _state = ScaleConnectionState.connected;
+          }
+          notifyListeners();
+        }
+      },
+      onError: (Object error) {
+        debugPrint("Fast scanner error: $error");
+        _fastScanActive = false;
+        _fallbackToAdvertisements();
+      },
+    );
+
+    await _fastScanner!.startTracking(deviceId);
+    _fastScanActive = true;
+    if (_state == ScaleConnectionState.connecting) {
+      _state = ScaleConnectionState.connected;
+    }
+    notifyListeners();
+  }
+
+  Future<void> _fallbackToAdvertisements() async {
+    await startScan();
+    if (_connectedDevice != null) {
+      _state = ScaleConnectionState.connected;
+      notifyListeners();
     }
   }
 
   int? _parseWeightFromManufacturerData(BleDevice device) {
-    for (final ManufacturerData manufacturerData in device.manufacturerDataList) {
+    for (final ManufacturerData manufacturerData
+        in device.manufacturerDataList) {
       final Uint8List fullBytes = manufacturerData.toUint8List();
-      final int? valueFromFull = _parseWeightFromBytes(fullBytes, _weightOffset);
+      final int? valueFromFull =
+          _parseWeightFromBytes(fullBytes, _weightOffset);
       if (valueFromFull != null) return valueFromFull;
 
       final int adjustedOffset = _weightOffset - 2;
@@ -176,19 +208,20 @@ class CraneScaleService extends ChangeNotifier {
       return null;
     }
 
-    final ByteData data = ByteData.sublistView(bytes, offset, offset + _weightLength);
+    final ByteData data =
+        ByteData.sublistView(bytes, offset, offset + _weightLength);
     final int rawWeight = data.getInt16(0, Endian.big);
     final double kilograms = rawWeight / 100.0;
     return kilograms.round().clamp(0, 100);
   }
 
   Future<void> disconnect() async {
-    _handleDisconnect();
+    await _handleDisconnect();
   }
 
   Future<void> connectSimulated() async {
     await stopScan();
-    _handleDisconnect(); // clear real connection
+    _handleDisconnect();
     _isSimulated = true;
     _state = ScaleConnectionState.connected;
     notifyListeners();
@@ -203,12 +236,19 @@ class CraneScaleService extends ChangeNotifier {
     }
   }
 
-  void _handleDisconnect() {
+  Future<void> _handleDisconnect() async {
+    _fastScanner?.dispose();
+    _fastScanner = null;
+    _fastScanActive = false;
     _connectedDevice = null;
     _isSimulated = false;
     _state = ScaleConnectionState.disconnected;
     _currentForce = 0;
     _scanTimeoutTimer?.cancel();
+    try {
+      await UniversalBle.stopScan();
+    } catch (_) {}
+    _isScanning = false;
     notifyListeners();
   }
 }
