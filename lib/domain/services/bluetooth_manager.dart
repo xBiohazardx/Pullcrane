@@ -34,6 +34,7 @@ class CraneScaleService extends ChangeNotifier {
   Timer? _scanTimeoutTimer;
   bool _isScanning = false;
   bool _fastScanActive = false;
+  bool _isReconnecting = false;
 
   final Map<String, BleDevice> _scanResultById = <String, BleDevice>{};
   List<BleDevice> _scanResults = [];
@@ -123,9 +124,11 @@ class CraneScaleService extends ChangeNotifier {
   }
 
   Future<void> stopScan() async {
-    _scanTimeoutTimer?.cancel();
-    await UniversalBle.stopScan();
     _isScanning = false;
+    _scanTimeoutTimer?.cancel();
+    try {
+      await UniversalBle.stopScan();
+    } catch (_) {}
     if (_state == ScaleConnectionState.scanning && _connectedDevice == null) {
       _state = ScaleConnectionState.disconnected;
       notifyListeners();
@@ -136,6 +139,8 @@ class CraneScaleService extends ChangeNotifier {
     if ((device.name ?? '') != _targetDeviceName) {
       return;
     }
+    if (_isReconnecting) return;
+    _isReconnecting = true;
 
     _connectedDevice = device;
     _state = ScaleConnectionState.connecting;
@@ -148,6 +153,8 @@ class CraneScaleService extends ChangeNotifier {
       debugPrint("Fast scanner failed, falling back to advertisements: $e");
       _fastScanActive = false;
       _fallbackToAdvertisements();
+    } finally {
+      _isReconnecting = false;
     }
   }
 
@@ -221,6 +228,7 @@ class CraneScaleService extends ChangeNotifier {
 
   Future<void> disconnect() async {
     await _handleDisconnect();
+    startScan();
   }
 
   Future<void> connectSimulated() async {
@@ -249,10 +257,13 @@ class CraneScaleService extends ChangeNotifier {
     _state = ScaleConnectionState.disconnected;
     _currentForce = 0;
     _scanTimeoutTimer?.cancel();
-    try {
-      await UniversalBle.stopScan();
-    } catch (_) {}
-    _isScanning = false;
+    _isReconnecting = false;
+    if (_isScanning) {
+      _isScanning = false;
+      try {
+        await UniversalBle.stopScan();
+      } catch (_) {}
+    }
     notifyListeners();
   }
 }
