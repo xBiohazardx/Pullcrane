@@ -152,18 +152,21 @@ class CraneScaleService extends ChangeNotifier {
   }
 
   Future<void> _startFastScanner(String deviceId) async {
+    debugPrint('CraneScale: starting fast scanner for $deviceId');
+
     _fastScanner = FastBleScanner(
       onForceChanged: (int force) {
         if (_currentForce != force) {
           _currentForce = force;
           if (_state == ScaleConnectionState.connecting) {
             _state = ScaleConnectionState.connected;
+            debugPrint('CraneScale: fast scanner connected, first force=$force');
           }
           notifyListeners();
         }
       },
       onError: (Object error) {
-        debugPrint("Fast scanner error: $error");
+        debugPrint("CraneScale: fast scanner error -> falling back: $error");
         _fastScanActive = false;
         _fallbackToAdvertisements();
       },
@@ -173,6 +176,7 @@ class CraneScaleService extends ChangeNotifier {
     _fastScanActive = true;
     if (_state == ScaleConnectionState.connecting) {
       _state = ScaleConnectionState.connected;
+      debugPrint('CraneScale: fast scanner active, state -> connected');
     }
     notifyListeners();
   }
