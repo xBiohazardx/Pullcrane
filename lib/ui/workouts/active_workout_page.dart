@@ -62,6 +62,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   ExerciseHand? activeHand;
   ExerciseHand? pendingHandInSet;
   bool setStartArmed = false;
+  int completedReps = 0;
+  bool repIsAboveThreshold = false;
   final Map<ExerciseHand, int> handRemainingRest = <ExerciseHand, int>{
     ExerciseHand.left: 0,
     ExerciseHand.right: 0,
@@ -235,6 +237,9 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     return widget.exercisesById[entry.exerciseId];
   }
 
+  int get _repReleaseThresholdKg =>
+      max(widget.forceThresholdKg ~/ 2, 2);
+
   @override
   void initState() {
     super.initState();
@@ -349,6 +354,8 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       suggestedSwitchHand = null;
       setStartArmed =
           widget.requireZeroBeforeSetStart ? currentForce == 0 : true;
+      completedReps = 0;
+      repIsAboveThreshold = false;
       _syncTargetFeedback(currentForce);
     });
   }
@@ -363,11 +370,29 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     }
 
     final int nextForce = force.clamp(minForceKg, maxForceKg);
+    final WorkoutExerciseEntry? entry = currentEntry;
 
     setState(() {
       currentForce = nextForce;
       _syncTargetFeedback(currentForce);
+
+      if (phase == SessionPhase.activeSet && entry?.mode == ExerciseMode.reps) {
+        if (!repIsAboveThreshold && currentForce >= widget.forceThresholdKg) {
+          repIsAboveThreshold = true;
+        } else if (repIsAboveThreshold && currentForce < _repReleaseThresholdKg) {
+          repIsAboveThreshold = false;
+          completedReps++;
+        }
+      }
     });
+
+    if (phase == SessionPhase.activeSet &&
+        entry?.mode == ExerciseMode.reps &&
+        completedReps >= (entry?.reps ?? 0) &&
+        (entry?.reps ?? 0) > 0) {
+      _completeCurrentSet();
+      return;
+    }
 
     if (phase == SessionPhase.waitingForForce) {
       if (widget.requireZeroBeforeSetStart && currentForce == 0) {
@@ -399,6 +424,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       setState(() {
         phase = SessionPhase.activeSet;
         setStartArmed = false;
+        repIsAboveThreshold = true;
       });
       _syncTargetFeedback(currentForce);
       _syncTargetFeedback(currentForce);
@@ -580,7 +606,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         actionValue = '${remainingSetSeconds}s';
       } else {
         actionLabel = 'Target';
-        actionValue = '${entry?.reps ?? 0} Reps';
+        actionValue = '$completedReps/${entry?.reps ?? 0} Reps';
       }
     } else if (phase == SessionPhase.resting) {
       actionLabel = 'Rest';
