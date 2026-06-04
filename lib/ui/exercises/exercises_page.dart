@@ -71,7 +71,11 @@ class _ExercisesPageState extends State<ExercisesPage> {
                     : 'Single configuration';
 
                 return ListTile(
-                  title: Text(exercise.name),
+                  title: Text(
+                    exercise.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   subtitle: Text('${exercise.description}\n$handInfo'),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),

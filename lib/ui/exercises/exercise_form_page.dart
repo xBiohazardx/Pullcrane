@@ -115,6 +115,7 @@ class _ExerciseFormPageState extends State<ExerciseFormPage> {
           children: [
             TextFormField(
               controller: nameController,
+              maxLines: null,
               decoration: const InputDecoration(labelText: 'Name'),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
