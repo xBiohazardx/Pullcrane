@@ -5,6 +5,7 @@ import 'package:confetti/confetti.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/domain/models/workout.dart';
 import 'package:pullcrane/ui/force_chart.dart';
@@ -237,6 +238,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   @override
   void initState() {
     super.initState();
+    WakelockPlus.enable();
     _confettiController = ConfettiController(duration: const Duration(seconds: 3));
     CraneScaleService.instance.addListener(_onBleForceChanged);
     chartTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
@@ -295,6 +297,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     targetVibrationTimer?.cancel();
     CraneScaleService.instance.removeListener(_onBleForceChanged);
     _confettiController.dispose();
+    WakelockPlus.disable();
     super.dispose();
   }
 
