@@ -12,6 +12,7 @@ class CraneScaleService extends ChangeNotifier {
   static const String _targetDeviceName = 'IF_B7';
   static const int _weightOffset = 12;
   static const int _weightLength = 2;
+  static const Duration _dataTimeout = Duration(seconds: 5);
 
   CraneScaleService._() {
     _init();
@@ -35,6 +36,7 @@ class CraneScaleService extends ChangeNotifier {
   bool _isScanning = false;
   bool _fastScanActive = false;
   bool _isReconnecting = false;
+  Timer? _dataTimeoutTimer;
 
   final Map<String, BleDevice> _scanResultById = <String, BleDevice>{};
   List<BleDevice> _scanResults = [];
@@ -70,6 +72,7 @@ class CraneScaleService extends ChangeNotifier {
             _currentForce = parsedForce;
           }
           notifyListeners();
+          _resetDataTimeout();
         }
       }
     });
@@ -163,6 +166,7 @@ class CraneScaleService extends ChangeNotifier {
 
     _fastScanner = FastBleScanner(
       onForceChanged: (int force) {
+        _resetDataTimeout();
         if (_currentForce != force) {
           _currentForce = force;
           if (_state == ScaleConnectionState.connecting) {
@@ -186,6 +190,21 @@ class CraneScaleService extends ChangeNotifier {
       debugPrint('CraneScale: fast scanner active, state -> connected');
     }
     notifyListeners();
+    _resetDataTimeout();
+  }
+
+  void _resetDataTimeout() {
+    _dataTimeoutTimer?.cancel();
+    if (_state == ScaleConnectionState.connected && !_isSimulated) {
+      _dataTimeoutTimer = Timer(_dataTimeout, () {
+        debugPrint('CraneScale: data timeout after ${_dataTimeout.inSeconds}s, disconnecting');
+        try {
+          _handleDisconnect();
+        } catch (e) {
+          debugPrint('CraneScale: error during timeout disconnect: $e');
+        }
+      });
+    }
   }
 
   Future<void> _fallbackToAdvertisements() async {
@@ -193,6 +212,7 @@ class CraneScaleService extends ChangeNotifier {
     if (_connectedDevice != null) {
       _state = ScaleConnectionState.connected;
       notifyListeners();
+      _resetDataTimeout();
     }
   }
 
@@ -257,14 +277,15 @@ class CraneScaleService extends ChangeNotifier {
     _state = ScaleConnectionState.disconnected;
     _currentForce = 0;
     _scanTimeoutTimer?.cancel();
+    _dataTimeoutTimer?.cancel();
     _isReconnecting = false;
+    notifyListeners();
     if (_isScanning) {
       _isScanning = false;
       try {
         await UniversalBle.stopScan();
       } catch (_) {}
     }
-    notifyListeners();
   }
 }
 
