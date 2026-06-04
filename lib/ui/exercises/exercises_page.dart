@@ -55,6 +55,7 @@ class _ExercisesPageState extends State<ExercisesPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Exercises')),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'exercises_fab',
         onPressed: () => _openForm(),
         child: const Icon(Icons.add),
       ),

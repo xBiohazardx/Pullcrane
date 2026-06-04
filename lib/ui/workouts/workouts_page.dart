@@ -68,6 +68,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
         title: const Text('Workouts'),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'workouts_fab',
         onPressed: _openForm,
         child: const Icon(Icons.add),
       ),

@@ -401,6 +401,7 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
         title: Text(isEditing ? 'Edit Workout' : 'Create Workout'),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'workout_form_fab',
         onPressed: _showEntryDialog,
         icon: const Icon(Icons.add),
         label: const Text('Add Exercise'),
