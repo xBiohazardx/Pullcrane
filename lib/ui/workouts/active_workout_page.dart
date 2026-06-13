@@ -361,14 +361,6 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
   }
 
   void _onForceChanged(int force) {
-    if (CraneScaleService.instance.state == ScaleConnectionState.connected && force != CraneScaleService.instance.currentForce) {
-      // Ignore manual dummy input if connected and it's a drag event (not from BLE)
-      // Actually, since we only call _onForceChanged directly from BLE layer with real force,
-      // we need to distinguish. But if we check `force != CraneScaleService.instance.currentForce`,
-      // we can ignore drag. Or better, just ignore drag events outright below.
-      return;
-    }
-
     final int nextForce = force.clamp(minForceKg, maxForceKg);
     final WorkoutExerciseEntry? entry = currentEntry;
 

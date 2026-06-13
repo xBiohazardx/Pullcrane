@@ -10,9 +10,9 @@ class CraneScaleService extends ChangeNotifier {
   static final CraneScaleService instance = CraneScaleService._();
 
   static const String _targetDeviceName = 'IF_B7';
-  static const int _weightOffset = 12;
-  static const int _weightLength = 2;
   static const Duration _dataTimeout = Duration(seconds: 10);
+  static const int _maxFastScannerRetries = 3;
+  static const Duration _fastScannerRetryDelay = Duration(seconds: 1);
 
   CraneScaleService._() {
     _init();
@@ -37,6 +37,11 @@ class CraneScaleService extends ChangeNotifier {
   bool _fastScanActive = false;
   bool _isReconnecting = false;
   Timer? _dataTimeoutTimer;
+  String? _connectingDeviceId;
+  int _fastScannerRetryCount = 0;
+  bool _retryPending = false;
+  bool _fastScannerErrorFlag = false;
+  Timer? _retryTimer;
 
   final Map<String, BleDevice> _scanResultById = <String, BleDevice>{};
   List<BleDevice> _scanResults = [];
@@ -59,21 +64,6 @@ class CraneScaleService extends ChangeNotifier {
             return bRssi.compareTo(aRssi);
           });
         notifyListeners();
-      }
-
-      if (!_fastScanActive && _connectedDevice?.deviceId == device.deviceId) {
-        _connectedDevice = device;
-        final int? parsedForce = _parseWeightFromManufacturerData(device);
-        if (parsedForce != null) {
-          if (_state == ScaleConnectionState.connecting) {
-            _state = ScaleConnectionState.connected;
-          }
-          if (parsedForce != _currentForce) {
-            _currentForce = parsedForce;
-          }
-          notifyListeners();
-          _resetDataTimeout();
-        }
       }
     });
 
@@ -146,16 +136,21 @@ class CraneScaleService extends ChangeNotifier {
     _isReconnecting = true;
 
     _connectedDevice = device;
+    _connectingDeviceId = device.deviceId;
     _state = ScaleConnectionState.connecting;
     notifyListeners();
+
+    _retryTimer?.cancel();
+    _retryPending = false;
+    _fastScannerRetryCount = 0;
 
     try {
       await stopScan();
       await _startFastScanner(device.deviceId);
     } catch (e) {
-      debugPrint("Fast scanner failed, falling back to advertisements: $e");
+      debugPrint("Fast scanner setup failed: $e");
       _fastScanActive = false;
-      _fallbackToAdvertisements();
+      _retryOrFallback();
     } finally {
       _isReconnecting = false;
     }
@@ -164,6 +159,10 @@ class CraneScaleService extends ChangeNotifier {
   Future<void> _startFastScanner(String deviceId) async {
     debugPrint('CraneScale: starting fast scanner for $deviceId');
 
+    await _fastScanner?.dispose();
+    _fastScanner = null;
+    _fastScannerErrorFlag = false;
+
     _fastScanner = FastBleScanner(
       onForceChanged: (int force) {
         _resetDataTimeout();
@@ -171,79 +170,83 @@ class CraneScaleService extends ChangeNotifier {
           _currentForce = force;
           if (_state == ScaleConnectionState.connecting) {
             _state = ScaleConnectionState.connected;
+            _fastScannerRetryCount = 0;
             debugPrint('CraneScale: fast scanner connected, first force=$force');
           }
           notifyListeners();
         }
       },
       onError: (Object error) {
-        debugPrint("CraneScale: fast scanner error -> falling back: $error");
+        debugPrint("CraneScale: fast scanner error: $error");
+        _fastScannerErrorFlag = true;
         _fastScanActive = false;
-        _fallbackToAdvertisements();
+        _retryOrFallback();
       },
     );
 
-    await _fastScanner!.startTracking(deviceId);
     _fastScanActive = true;
-    if (_state == ScaleConnectionState.connecting) {
-      _state = ScaleConnectionState.connected;
-      debugPrint('CraneScale: fast scanner active, state -> connected');
+    await _fastScanner!.startTracking(deviceId);
+
+    if (!_fastScannerErrorFlag) {
+      if (_state == ScaleConnectionState.connecting) {
+        _state = ScaleConnectionState.connected;
+        debugPrint('CraneScale: fast scanner active, state -> connected');
+      }
+      notifyListeners();
+      _resetDataTimeout();
     }
-    notifyListeners();
-    _resetDataTimeout();
   }
 
   void _resetDataTimeout() {
     _dataTimeoutTimer?.cancel();
     if (_state == ScaleConnectionState.connected && !_isSimulated) {
       _dataTimeoutTimer = Timer(_dataTimeout, () {
-        debugPrint('CraneScale: data timeout after ${_dataTimeout.inSeconds}s, disconnecting');
-        try {
-          _handleDisconnect();
-        } catch (e) {
-          debugPrint('CraneScale: error during timeout disconnect: $e');
+        debugPrint('CraneScale: data timeout after ${_dataTimeout.inSeconds}s');
+        if (_retryPending) {
+          debugPrint('CraneScale: retry already pending, extending timeout');
+          _resetDataTimeout();
+          return;
+        }
+        if (_fastScanActive) {
+          debugPrint('CraneScale: fast scanner silent failure, triggering retry');
+          _handleFastScannerSilentFailure();
+        } else {
+          debugPrint('CraneScale: not in fast scan mode, hard disconnecting');
+          try {
+            _handleDisconnect();
+          } catch (e) {
+            debugPrint('CraneScale: error during timeout disconnect: $e');
+          }
         }
       });
     }
   }
 
-  Future<void> _fallbackToAdvertisements() async {
-    await startScan();
-    if (_connectedDevice != null) {
-      _state = ScaleConnectionState.connected;
-      notifyListeners();
-      _resetDataTimeout();
-    }
+  void _handleFastScannerSilentFailure() {
+    _fastScanActive = false;
+    _retryOrFallback();
   }
 
-  int? _parseWeightFromManufacturerData(BleDevice device) {
-    for (final ManufacturerData manufacturerData
-        in device.manufacturerDataList) {
-      final Uint8List fullBytes = manufacturerData.toUint8List();
-      final int? valueFromFull =
-          _parseWeightFromBytes(fullBytes, _weightOffset);
-      if (valueFromFull != null) return valueFromFull;
+  void _retryOrFallback() {
+    if (_retryPending) return;
 
-      final int adjustedOffset = _weightOffset - 2;
-      final int? valueFromPayload = _parseWeightFromBytes(
-        manufacturerData.payload,
-        adjustedOffset,
-      );
-      if (valueFromPayload != null) return valueFromPayload;
+    _fastScanner?.dispose();
+    _fastScanner = null;
+
+    if (_fastScannerRetryCount < _maxFastScannerRetries) {
+      _retryPending = true;
+      _fastScannerRetryCount++;
+      debugPrint('CraneScale: scheduling fast scanner retry $_fastScannerRetryCount/$_maxFastScannerRetries');
+      _retryTimer = Timer(_fastScannerRetryDelay, () async {
+        _retryPending = false;
+        if (_connectingDeviceId != null) {
+          await _startFastScanner(_connectingDeviceId!);
+        }
+      });
+    } else {
+      debugPrint('CraneScale: fast scanner retries exhausted, disconnecting');
+      _handleDisconnect();
     }
-    return null;
-  }
-
-  int? _parseWeightFromBytes(Uint8List bytes, int offset) {
-    if (offset < 0 || bytes.length < offset + _weightLength) {
-      return null;
-    }
-
-    final ByteData data =
-        ByteData.sublistView(bytes, offset, offset + _weightLength);
-    final int rawWeight = data.getInt16(0, Endian.big);
-    final double kilograms = rawWeight / 100.0;
-    return kilograms.round().clamp(0, 100);
   }
 
   Future<void> disconnect() async {
@@ -252,6 +255,9 @@ class CraneScaleService extends ChangeNotifier {
   }
 
   Future<void> connectSimulated() async {
+    _retryTimer?.cancel();
+    _retryPending = false;
+    _connectingDeviceId = null;
     await stopScan();
     _handleDisconnect();
     _isSimulated = true;
@@ -269,6 +275,9 @@ class CraneScaleService extends ChangeNotifier {
   }
 
   Future<void> _handleDisconnect() async {
+    _retryTimer?.cancel();
+    _retryPending = false;
+    _connectingDeviceId = null;
     _fastScanner?.dispose();
     _fastScanner = null;
     _fastScanActive = false;
