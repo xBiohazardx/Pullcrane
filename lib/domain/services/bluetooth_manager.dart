@@ -12,7 +12,7 @@ class CraneScaleService extends ChangeNotifier {
   static const String _targetDeviceName = 'IF_B7';
   static const int _weightOffset = 12;
   static const int _weightLength = 2;
-  static const Duration _dataTimeout = Duration(seconds: 5);
+  static const Duration _dataTimeout = Duration(seconds: 10);
 
   CraneScaleService._() {
     _init();
