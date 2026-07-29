@@ -1,6 +1,10 @@
+import 'dart:math';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
+import 'package:pullcrane/domain/models/set_log.dart';
 
 enum TimeFilter { d, w, m, y, all }
 
@@ -15,6 +19,26 @@ class ExerciseProgressionPage extends StatefulWidget {
 
 class _ExerciseProgressionPageState extends State<ExerciseProgressionPage> {
   TimeFilter selectedFilter = TimeFilter.all;
+  List<SetLog> trainingLogs = <SetLog>[];
+  bool logsLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTrainingLogs();
+  }
+
+  Future<void> _loadTrainingLogs() async {
+    final List<SetLog> logs =
+        await AppStores.sessions.listLogsForExercise(widget.exercise.id);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      trainingLogs = logs;
+      logsLoading = false;
+    });
+  }
 
   String _formatDate(DateTime d) {
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
@@ -29,30 +53,34 @@ class _ExerciseProgressionPageState extends State<ExerciseProgressionPage> {
     return '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   }
 
-  List<MaxLiftRecord> _getFilteredHistory() {
-    if (selectedFilter == TimeFilter.all) return widget.exercise.maxLiftHistory;
-    
+  DateTime get _filterThreshold {
     final DateTime now = DateTime.now();
-    DateTime threshold;
     switch (selectedFilter) {
       case TimeFilter.d:
-        threshold = now.subtract(const Duration(days: 1));
-        break;
+        return now.subtract(const Duration(days: 1));
       case TimeFilter.w:
-        threshold = now.subtract(const Duration(days: 7));
-        break;
+        return now.subtract(const Duration(days: 7));
       case TimeFilter.m:
-        threshold = now.subtract(const Duration(days: 30));
-        break;
+        return now.subtract(const Duration(days: 30));
       case TimeFilter.y:
-        threshold = now.subtract(const Duration(days: 365));
-        break;
+        return now.subtract(const Duration(days: 365));
       case TimeFilter.all:
-        threshold = DateTime.fromMillisecondsSinceEpoch(0);
-        break;
+        return DateTime.fromMillisecondsSinceEpoch(0);
     }
-    
+  }
+
+  List<MaxLiftRecord> _getFilteredHistory() {
+    final DateTime threshold = _filterThreshold;
+    if (selectedFilter == TimeFilter.all) return widget.exercise.maxLiftHistory;
     return widget.exercise.maxLiftHistory.where((r) => r.date.isAfter(threshold)).toList();
+  }
+
+  List<SetLog> get _filteredTrainingLogs {
+    final DateTime threshold = _filterThreshold;
+    return trainingLogs.where((log) {
+      final DateTime? date = log.sessionStartedAt;
+      return date == null || date.isAfter(threshold);
+    }).toList();
   }
 
   @override
@@ -163,11 +191,25 @@ class _ExerciseProgressionPageState extends State<ExerciseProgressionPage> {
             ),
           );
 
+    final List<SetLog> filteredLogs = _filteredTrainingLogs;
+    final int sessionCount = filteredLogs
+        .map((log) => log.sessionStartedAt?.toIso8601String() ?? '')
+        .toSet()
+        .length;
+    final int timeUnderTensionSeconds = filteredLogs.fold<int>(
+      0,
+      (sum, log) => sum + log.actualDurationSeconds,
+    );
+    final int bestPeakKg = filteredLogs.fold<int>(
+      0,
+      (best, log) => max(best, log.peakForceKg),
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.exercise.name} Progression'),
       ),
-      body: Column(
+      body: ListView(
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -209,25 +251,107 @@ class _ExerciseProgressionPageState extends State<ExerciseProgressionPage> {
             child: chartWidget,
           ),
           const Divider(),
-          Expanded(
-            child: filteredData.isEmpty
-                ? const Center(child: Text('No history available.'))
-                : ListView.builder(
-                    itemCount: filteredData.length,
-                    // Show newest first
-                    itemBuilder: (context, index) {
-                      final record = filteredData[filteredData.length - 1 - index];
-                      final String weightText = widget.exercise.isSideSwitching
-                          ? 'L ${record.leftKg}kg • R ${record.rightKg}kg'
-                          : '${record.leftKg}kg';
-
-                      return ListTile(
-                        title: Text(weightText),
-                        subtitle: Text(_formatDate(record.date)),
-                      );
-                    },
+          if (!logsLoading && trainingLogs.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Text(
+                'Training summary',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _StatChip(
+                    label: 'Sessions',
+                    value: '$sessionCount',
                   ),
+                  _StatChip(
+                    label: 'Time under tension',
+                    value: _formatDurationSeconds(timeUnderTensionSeconds),
+                  ),
+                  _StatChip(
+                    label: 'Best peak',
+                    value: '${bestPeakKg}kg',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...filteredLogs.take(10).map(
+                  (log) => ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.fitness_center, size: 20),
+                    title: Text(
+                      'Set ${log.setNumber}'
+                      '${log.hand != null ? ' (${log.hand == ExerciseHand.left ? 'L' : 'R'})' : ''} — '
+                      'peak ${log.peakForceKg}kg / target ${log.targetForceKg}kg',
+                    ),
+                    subtitle: Text(
+                      '${log.sessionStartedAt == null ? '' : '${_formatDate(log.sessionStartedAt!)} • '}'
+                      '${log.plannedDurationSeconds > 0 ? '${log.actualDurationSeconds}/${log.plannedDurationSeconds}s' : '${log.plannedReps} reps'}',
+                    ),
+                  ),
+                ),
+            const Divider(),
+          ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Text(
+              'Max lift measurements',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
           ),
+          if (filteredData.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: Text('No history available.')),
+            )
+          else
+            ...List.generate(filteredData.length, (index) {
+              // Show newest first
+              final record = filteredData[filteredData.length - 1 - index];
+              final String weightText = widget.exercise.isSideSwitching
+                  ? 'L ${record.leftKg}kg • R ${record.rightKg}kg'
+                  : '${record.leftKg}kg';
+
+              return ListTile(
+                title: Text(weightText),
+                subtitle: Text(_formatDate(record.date)),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  String _formatDurationSeconds(int seconds) {
+    final int minutes = seconds ~/ 60;
+    final int remainder = seconds % 60;
+    if (minutes == 0) {
+      return '${remainder}s';
+    }
+    return '${minutes}m ${remainder}s';
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  const _StatChip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      label: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value, style: Theme.of(context).textTheme.titleMedium),
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
         ],
       ),
     );

@@ -46,6 +46,46 @@ class _ExercisesPageState extends State<ExercisesPage> {
   }
 
   Future<void> _deleteExercise(Exercise exercise) async {
+    final List<String> affectedWorkouts =
+        await AppStores.workouts.listWorkoutNamesUsingExercise(exercise.id);
+    if (!mounted) {
+      return;
+    }
+
+    final String usageWarning = affectedWorkouts.isEmpty
+        ? 'It is not used in any workout.'
+        : 'It is used in ${affectedWorkouts.length} workout(s): '
+              '${affectedWorkouts.join(', ')}. '
+              'Its entries will be removed from those workouts.';
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text('Delete "${exercise.name}"?'),
+        content: Text(
+          'This exercise and its measurement history will be permanently '
+          'deleted. $usageWarning',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
     await AppStores.exercises.deleteExercise(exercise.id);
     await _reload();
   }

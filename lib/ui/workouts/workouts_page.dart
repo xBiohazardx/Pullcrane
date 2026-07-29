@@ -3,6 +3,7 @@ import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/domain/models/workout.dart';
 import 'package:pullcrane/ui/workouts/workout_form_page.dart';
+import 'package:pullcrane/ui/workouts/workout_history_page.dart';
 
 class WorkoutsPage extends StatefulWidget {
   const WorkoutsPage({super.key});
@@ -39,6 +40,9 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
 
   Future<void> _openForm({Workout? initial}) async {
     await _reload();
+    if (!mounted) {
+      return;
+    }
     final Workout? result = await Navigator.of(context).push<Workout>(
       MaterialPageRoute(
         builder: (_) => WorkoutFormPage(
@@ -57,6 +61,34 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
   }
 
   Future<void> _deleteWorkout(Workout workout) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text('Delete "${workout.name}"?'),
+        content: const Text(
+          'This workout will be permanently deleted. '
+          'Its exercises are not affected.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
     await AppStores.workouts.deleteWorkout(workout.id);
     await _reload();
   }
@@ -66,6 +98,15 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Workouts'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Session history',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const WorkoutHistoryPage()),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openForm,

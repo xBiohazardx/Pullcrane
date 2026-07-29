@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/ui/benchmark/max_lift_measurement_page.dart';
 import 'package:pullcrane/ui/exercises/exercise_progression_page.dart';
-import 'package:pullcrane/data/app_stores.dart';
 
 class ExerciseFormPage extends StatefulWidget {
   const ExerciseFormPage({super.key, this.initialExercise});

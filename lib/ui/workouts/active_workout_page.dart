@@ -5,15 +5,17 @@ import 'package:confetti/confetti.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pullcrane/data/app_stores.dart';
 import 'package:pullcrane/domain/models/exercise.dart';
 import 'package:pullcrane/domain/models/workout.dart';
+import 'package:pullcrane/domain/services/bluetooth_manager.dart';
+import 'package:pullcrane/domain/services/workout_session_controller.dart';
+import 'package:pullcrane/ui/bluetooth_connection_sheet.dart';
 import 'package:pullcrane/ui/force_chart.dart';
 import 'package:pullcrane/ui/force_input_dummy.dart';
-import 'package:pullcrane/domain/services/bluetooth_manager.dart';
-import 'package:pullcrane/ui/bluetooth_connection_sheet.dart';
-import 'animated_instruction_overlay.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
-enum SessionPhase { waitingForForce, activeSet, resting, finished }
+import 'animated_instruction_overlay.dart';
 
 class ActiveWorkoutPage extends StatefulWidget {
   const ActiveWorkoutPage({
@@ -24,6 +26,7 @@ class ActiveWorkoutPage extends StatefulWidget {
     required this.targetHysteresisKg,
     required this.enableTargetHaptics,
     required this.requireZeroBeforeSetStart,
+    required this.maxForceKg,
   });
 
   final Workout workout;
@@ -32,540 +35,279 @@ class ActiveWorkoutPage extends StatefulWidget {
   final int targetHysteresisKg;
   final bool enableTargetHaptics;
   final bool requireZeroBeforeSetStart;
+  final int maxForceKg;
 
   @override
   State<ActiveWorkoutPage> createState() => _ActiveWorkoutPageState();
 }
 
 class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
-  static const int minForceKg = 0;
-  static const int maxForceKg = 100;
   static const double dummySensitivity = 0.3;
   static const Duration targetVibrationInterval = Duration(milliseconds: 280);
 
-  List<FlSpot> dataPoints = List<FlSpot>.empty(growable: true);
-  int currentEntryIndex = 0;
-  int currentSet = 1;
-  int currentForce = 0;
-  int maxForce = 0;
-  int timeIndex = 0;
-  int remainingSetSeconds = 0;
-  int remainingRestSeconds = 0;
-  SessionPhase phase = SessionPhase.finished;
-  bool isInTargetRange = false;
-  Timer? chartTimer;
-  Timer? handRestTimer;
-  Timer? phaseTimer;
-  Timer? targetVibrationTimer;
-  ExerciseHand? suggestedSwitchHand;
-  ExerciseHand? activeHand;
-  ExerciseHand? pendingHandInSet;
-  bool setStartArmed = false;
-  final Map<ExerciseHand, int> handRemainingRest = <ExerciseHand, int>{
-    ExerciseHand.left: 0,
-    ExerciseHand.right: 0,
-  };
+  late final WorkoutSessionController controller;
   late final ConfettiController _confettiController;
 
-  ExerciseHand _oppositeHand(ExerciseHand hand) {
-    return hand == ExerciseHand.left ? ExerciseHand.right : ExerciseHand.left;
+  final List<FlSpot> dataPoints = List<FlSpot>.empty(growable: true);
+  int _timeIndex = 0;
+  int _observedMaxForce = 0;
+
+  Timer? _ticker;
+  Timer? _chartTimer;
+  Timer? _targetVibrationTimer;
+  bool _isVibrating = false;
+
+  late final DateTime _sessionStartedAt;
+  bool _sessionSaved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = WorkoutSessionController(
+      workout: widget.workout,
+      exercisesById: widget.exercisesById,
+      config: WorkoutSessionConfig(
+        forceThresholdKg: widget.forceThresholdKg,
+        targetHysteresisKg: widget.targetHysteresisKg,
+        requireZeroBeforeSetStart: widget.requireZeroBeforeSetStart,
+        maxForceKg: widget.maxForceKg,
+      ),
+    );
+    _confettiController = ConfettiController(
+      duration: const Duration(seconds: 3),
+    );
+    controller.onFinished = () {
+      _confettiController.play();
+      unawaited(_saveSession(completed: true));
+    };
+    controller.addListener(_syncTargetHaptics);
+
+    _sessionStartedAt = DateTime.now();
+
+    CraneScaleService.instance.addListener(_onServiceForceChanged);
+    controller.start(DateTime.now());
+    // Push the current force immediately so the page never shows stale data.
+    _onServiceForceChanged();
+
+    // All countdowns are wall-clock anchored inside the controller, so the
+    // tick rate only affects UI smoothness, not correctness.
+    _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      controller.tick(DateTime.now());
+    });
+    _chartTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        final int force = controller.currentForce;
+        dataPoints.add(FlSpot(_timeIndex.toDouble(), force.toDouble()));
+        _timeIndex++;
+        if (dataPoints.length > 220) {
+          dataPoints.removeAt(0);
+        }
+        if (force > _observedMaxForce) {
+          _observedMaxForce = force;
+        }
+      });
+    });
+
+    unawaited(WakelockPlus.enable().catchError((_) {}));
   }
 
-  bool _isLastEntry() {
-    return currentEntryIndex >= widget.workout.entries.length - 1;
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _chartTimer?.cancel();
+    _targetVibrationTimer?.cancel();
+    CraneScaleService.instance.removeListener(_onServiceForceChanged);
+    controller.removeListener(_syncTargetHaptics);
+    controller.dispose();
+    _confettiController.dispose();
+    unawaited(WakelockPlus.disable().catchError((_) {}));
+    super.dispose();
   }
 
-  ExerciseHand? _resolveSwitchTarget({
-    required Exercise exercise,
-    required WorkoutExerciseEntry entry,
-    required ExerciseHand? completedHand,
-  }) {
-    if (!exercise.isSideSwitching || completedHand == null) {
-      return null;
+  void _onServiceForceChanged() {
+    if (!mounted) {
+      return;
+    }
+    // Forward unconditionally: on disconnect the service resets its force to
+    // 0, and the engine/page must see that instead of a stale value.
+    controller.onForceChanged(
+      CraneScaleService.instance.currentForce,
+      DateTime.now(),
+    );
+  }
+
+  bool get _inActiveTargetZone {
+    final bool gatedPhase = controller.phase == SessionPhase.activeSet ||
+        (controller.phase == SessionPhase.waitingForForce &&
+            controller.setStartArmed);
+    return controller.isInTargetZone && gatedPhase;
+  }
+
+  void _syncTargetHaptics() {
+    if (!mounted) {
+      return;
+    }
+    final bool shouldVibrate =
+        widget.enableTargetHaptics && _inActiveTargetZone;
+    if (shouldVibrate == _isVibrating) {
+      return;
     }
 
-    if (completedHand == entry.startingHand) {
-      pendingHandInSet = _oppositeHand(completedHand);
+    _isVibrating = shouldVibrate;
+    if (_isVibrating) {
+      HapticFeedback.selectionClick();
+      _targetVibrationTimer?.cancel();
+      _targetVibrationTimer = Timer.periodic(targetVibrationInterval, (_) {
+        HapticFeedback.lightImpact();
+      });
     } else {
-      pendingHandInSet = null;
+      _targetVibrationTimer?.cancel();
+      _targetVibrationTimer = null;
     }
-
-    if (pendingHandInSet != null) {
-      return pendingHandInSet;
-    }
-
-    if (currentSet < entry.sets) {
-      // Both hands completed this set, next set starts from starting hand.
-      return entry.startingHand;
-    }
-
-    return null;
-  }
-
-  bool _hasMoreWorkAfterCurrentCompletion({
-    required WorkoutExerciseEntry entry,
-    required ExerciseHand? switchTarget,
-  }) {
-    if (switchTarget != null) {
-      return true;
-    }
-    if (currentSet < entry.sets) {
-      return true;
-    }
-    return !_isLastEntry();
   }
 
   String _handLabel(ExerciseHand hand) {
     return hand == ExerciseHand.left ? 'Left' : 'Right';
   }
 
-  int _remainingRestForHand(ExerciseHand hand) {
-    return max(0, handRemainingRest[hand] ?? 0);
-  }
-
-  int _maxLiftForHand(Exercise exercise, ExerciseHand hand) {
-    return hand == ExerciseHand.left
-        ? exercise.maxLiftLeftKg
-        : exercise.maxLiftRightKg;
-  }
-
-  int _effectiveExerciseMaxLiftKg(Exercise exercise, WorkoutExerciseEntry entry) {
-    final ExerciseHand primaryHand = exercise.isSideSwitching
-        ? (activeHand ?? entry.startingHand)
-        : entry.startingHand;
-    final ExerciseHand secondaryHand = _oppositeHand(primaryHand);
-
-    final int primaryMaxLift = _maxLiftForHand(exercise, primaryHand);
-    if (primaryMaxLift > 0) {
-      return primaryMaxLift;
+  /// Persists the session if at least one set was logged. Runs at most once.
+  Future<void> _saveSession({required bool completed}) async {
+    if (_sessionSaved || controller.setLogs.isEmpty) {
+      return;
     }
-
-    final int secondaryMaxLift = _maxLiftForHand(exercise, secondaryHand);
-    if (secondaryMaxLift > 0) {
-      return secondaryMaxLift;
+    _sessionSaved = true;
+    try {
+      await AppStores.sessions.saveSession(
+        workoutId: widget.workout.id,
+        workoutName: widget.workout.name,
+        startedAt: _sessionStartedAt,
+        finishedAt: DateTime.now(),
+        completed: completed,
+        logs: controller.setLogs,
+      );
+    } catch (e) {
+      debugPrint('Failed to save workout session: $e');
     }
-
-    return 60; // default fallback if max lift is not set
   }
 
-  int _resolveTargetForceKg(Exercise? exercise, WorkoutExerciseEntry? entry) {
-    if (exercise == null || entry == null) {
-      return widget.forceThresholdKg;
-    }
-    if (entry.targetForceMode == TargetForceMode.relativePercent) {
-      final int effectiveMaxLift = _effectiveExerciseMaxLiftKg(exercise, entry);
-      final double relativeKg =
-          (effectiveMaxLift * entry.targetForceValue) / 100;
-      return relativeKg.round().clamp(minForceKg, maxForceKg);
-    }
-    return entry.targetForceValue.round().clamp(minForceKg, maxForceKg);
-  }
-
-  int _targetMinForceKg(Exercise? exercise, WorkoutExerciseEntry? entry) {
-    final int baseTarget = _resolveTargetForceKg(exercise, entry);
-    return max(minForceKg, baseTarget - widget.targetHysteresisKg);
-  }
-
-  int _targetMaxForceKg(Exercise? exercise, WorkoutExerciseEntry? entry) {
-    final int baseTarget = _resolveTargetForceKg(exercise, entry);
-    return min(maxForceKg, baseTarget + widget.targetHysteresisKg);
-  }
-
-  String _targetLabel(Exercise? exercise, WorkoutExerciseEntry? entry) {
-    if (exercise == null || entry == null) {
-      return '${widget.forceThresholdKg} kg';
-    }
-    if (entry.targetForceMode == TargetForceMode.relativePercent) {
-      final String percent = entry.targetForceValue
-          .toStringAsFixed(entry.targetForceValue % 1 == 0 ? 0 : 1);
-      return '$percent% (~${_resolveTargetForceKg(exercise, entry)}kg)';
-    }
-    return '${entry.targetForceValue.toStringAsFixed(entry.targetForceValue % 1 == 0 ? 0 : 1)}kg';
-  }
-
-  bool _isInsideTarget(int force) {
-    final Exercise? exercise = currentExercise;
-    final WorkoutExerciseEntry? entry = currentEntry;
-    final int minTarget = _targetMinForceKg(exercise, entry);
-    final int maxTarget = _targetMaxForceKg(exercise, entry);
-    return force >= minTarget && force <= maxTarget;
-  }
-
-  void _syncTargetFeedback(int force) {
-    final bool isForceInTarget = _isInsideTarget(force);
-    final bool shouldVibrate = (phase == SessionPhase.activeSet || (phase == SessionPhase.waitingForForce && setStartArmed));
-    final bool nextInTargetRange = isForceInTarget && shouldVibrate;
-
-    if (nextInTargetRange == isInTargetRange) {
+  Future<void> _handlePopAttempt() async {
+    if (controller.phase == SessionPhase.finished) {
+      Navigator.of(context).pop();
       return;
     }
 
-    isInTargetRange = nextInTargetRange;
-    if (!widget.enableTargetHaptics) {
-      targetVibrationTimer?.cancel();
-      targetVibrationTimer = null;
-      return;
-    }
-
-    if (isInTargetRange) {
-      HapticFeedback.selectionClick();
-      targetVibrationTimer?.cancel();
-      targetVibrationTimer = Timer.periodic(targetVibrationInterval, (_) {
-        HapticFeedback.lightImpact();
-      });
-    } else {
-      targetVibrationTimer?.cancel();
-      targetVibrationTimer = null;
-    }
-  }
-
-  WorkoutExerciseEntry? get currentEntry {
-    if (currentEntryIndex >= widget.workout.entries.length) {
-      return null;
-    }
-    return widget.workout.entries[currentEntryIndex];
-  }
-
-  Exercise? get currentExercise {
-    final WorkoutExerciseEntry? entry = currentEntry;
-    if (entry == null) {
-      return null;
-    }
-    return widget.exercisesById[entry.exerciseId];
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _confettiController = ConfettiController(duration: const Duration(seconds: 3));
-    CraneScaleService.instance.addListener(_onBleForceChanged);
-    chartTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        final int sampledForce = currentForce.clamp(minForceKg, maxForceKg);
-        dataPoints.add(FlSpot(timeIndex.toDouble(), sampledForce.toDouble()));
-        timeIndex++;
-        if (dataPoints.length > 220) {
-          dataPoints.removeAt(0);
-        }
-        if (sampledForce > maxForce) {
-          maxForce = sampledForce;
-        }
-      });
-    });
-    handRestTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) {
-        return;
-      }
-      if (CraneScaleService.instance.state != ScaleConnectionState.connected) {
-        return;
-      }
-
-      bool shouldAdvance = false;
-      setState(() {
-        for (final ExerciseHand hand in ExerciseHand.values) {
-          final int remaining = handRemainingRest[hand] ?? 0;
-          if (remaining > 0) {
-            handRemainingRest[hand] = remaining - 1;
-          }
-        }
-
-        if (phase == SessionPhase.resting && suggestedSwitchHand != null) {
-          remainingRestSeconds = _remainingRestForHand(suggestedSwitchHand!);
-          if (remainingRestSeconds <= 0) {
-            shouldAdvance = true;
-          }
-        }
-      });
-
-      if (shouldAdvance) {
-        _goToNextSetOrEntry();
-      }
-    });
-    _prepareCurrentSet();
-  }
-
-  @override
-  void dispose() {
-    chartTimer?.cancel();
-    handRestTimer?.cancel();
-    phaseTimer?.cancel();
-    targetVibrationTimer?.cancel();
-    CraneScaleService.instance.removeListener(_onBleForceChanged);
-    _confettiController.dispose();
-    super.dispose();
-  }
-
-  void _onBleForceChanged() {
-    if (!mounted) return;
-    if (CraneScaleService.instance.state == ScaleConnectionState.connected) {
-      _onForceChanged(CraneScaleService.instance.currentForce);
-    }
-  }
-
-  void _prepareCurrentSet() {
-    phaseTimer?.cancel();
-    final WorkoutExerciseEntry? entry = currentEntry;
-    final Exercise? exercise = currentExercise;
-
-    if (entry == null) {
-      setState(() {
-        phase = SessionPhase.finished;
-        _confettiController.play();
-        suggestedSwitchHand = null;
-        activeHand = null;
-        pendingHandInSet = null;
-      });
-      return;
-    }
-
-    if (exercise == null) {
-      setState(() {
-        phase = SessionPhase.waitingForForce;
-        suggestedSwitchHand = null;
-        activeHand = null;
-        pendingHandInSet = null;
-        setStartArmed =
-            widget.requireZeroBeforeSetStart ? currentForce == 0 : true;
-      });
-      return;
-    }
-
-    if (exercise.isSideSwitching) {
-      activeHand ??= entry.startingHand;
-    } else {
-      activeHand = null;
-      pendingHandInSet = null;
-    }
-
-    setState(() {
-      remainingSetSeconds = entry.durationSeconds ?? 0;
-      phase = SessionPhase.waitingForForce;
-      suggestedSwitchHand = null;
-      setStartArmed =
-          widget.requireZeroBeforeSetStart ? currentForce == 0 : true;
-      _syncTargetFeedback(currentForce);
-    });
-  }
-
-  void _onForceChanged(int force) {
-    if (CraneScaleService.instance.state == ScaleConnectionState.connected && force != CraneScaleService.instance.currentForce) {
-      // Ignore manual dummy input if connected and it's a drag event (not from BLE)
-      // Actually, since we only call _onForceChanged directly from BLE layer with real force,
-      // we need to distinguish. But if we check `force != CraneScaleService.instance.currentForce`,
-      // we can ignore drag. Or better, just ignore drag events outright below.
-      return;
-    }
-
-    final int nextForce = force.clamp(minForceKg, maxForceKg);
-
-    setState(() {
-      currentForce = nextForce;
-      _syncTargetFeedback(currentForce);
-    });
-
-    if (phase == SessionPhase.waitingForForce) {
-      if (widget.requireZeroBeforeSetStart && currentForce == 0) {
-        setState(() {
-          setStartArmed = true;
-        });
-        return;
-      }
-
-      _attemptStartWaitingSet();
-    }
-  }
-
-  void _attemptStartWaitingSet() {
-    if (phase != SessionPhase.waitingForForce || !setStartArmed) {
-      return;
-    }
-    if (currentForce < widget.forceThresholdKg) {
-      return;
-    }
-
-    final WorkoutExerciseEntry? entry = currentEntry;
-    if (entry?.mode == ExerciseMode.duration) {
-      setState(() {
-        setStartArmed = false;
-      });
-      _startDurationSetTimer();
-    } else {
-      setState(() {
-        phase = SessionPhase.activeSet;
-        setStartArmed = false;
-      });
-      _syncTargetFeedback(currentForce);
-      _syncTargetFeedback(currentForce);
-    }
-  }
-
-  void _startDurationSetTimer() {
-    if (remainingSetSeconds <= 0) {
-      _completeCurrentSet();
-      return;
-    }
-
-    setState(() {
-      phase = SessionPhase.activeSet;
-    });
-    _syncTargetFeedback(currentForce);
-    _syncTargetFeedback(currentForce);
-
-    phaseTimer?.cancel();
-    phaseTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) {
-        return;
-      }
-      if (CraneScaleService.instance.state != ScaleConnectionState.connected) {
-        return;
-      }
-      if (remainingSetSeconds <= 1) {
-        _completeCurrentSet();
-        return;
-      }
-      setState(() {
-        remainingSetSeconds--;
-      });
-    });
-  }
-
-  void _completeCurrentSet() {
-    phaseTimer?.cancel();
-
-    final WorkoutExerciseEntry? entry = currentEntry;
-    final Exercise? exercise = currentExercise;
-    final ExerciseHand? completedHand =
-        exercise?.isSideSwitching == true ? activeHand : null;
-
-    if (entry == null || exercise == null) {
-      _goToNextSetOrEntry();
-      return;
-    }
-
-    final int restSeconds = entry.restSeconds;
-    if (completedHand != null) {
-      handRemainingRest[completedHand] = restSeconds;
-    }
-
-    final ExerciseHand? switchTarget = _resolveSwitchTarget(
-      exercise: exercise,
-      entry: entry,
-      completedHand: completedHand,
+    final bool? abort = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('Abort workout?'),
+        content: const Text(
+          'The workout is still in progress. Remaining sets will be skipped.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Continue'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Abort'),
+          ),
+        ],
+      ),
     );
 
-    if (!_hasMoreWorkAfterCurrentCompletion(entry: entry, switchTarget: switchTarget)) {
-      _goToNextSetOrEntry();
-      return;
+    if (abort == true && mounted) {
+      await _saveSession(completed: false);
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
     }
-
-    final int effectiveRestSeconds = switchTarget != null
-        ? _remainingRestForHand(switchTarget)
-        : restSeconds;
-
-    if (effectiveRestSeconds <= 0) {
-      _goToNextSetOrEntry();
-      return;
-    }
-
-    setState(() {
-      remainingRestSeconds = effectiveRestSeconds;
-      phase = SessionPhase.resting;
-      suggestedSwitchHand = switchTarget;
-      setStartArmed = false;
-    });
-    _syncTargetFeedback(currentForce);
-    _syncTargetFeedback(currentForce);
-
-    phaseTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) {
-        return;
-      }
-      if (CraneScaleService.instance.state != ScaleConnectionState.connected) {
-        return;
-      }
-      if (suggestedSwitchHand != null) {
-        // Auto-switch rests are controlled by per-hand timers.
-        return;
-      }
-      if (remainingRestSeconds <= 1) {
-        _goToNextSetOrEntry();
-        return;
-      }
-      setState(() {
-        remainingRestSeconds--;
-      });
-    });
   }
 
-  void _goToNextSetOrEntry() {
-    phaseTimer?.cancel();
-
-    final WorkoutExerciseEntry? entry = currentEntry;
-    final Exercise? exercise = currentExercise;
-
-    if (exercise != null && exercise.isSideSwitching && pendingHandInSet != null) {
-      setState(() {
-        activeHand = pendingHandInSet;
-        pendingHandInSet = null;
-        suggestedSwitchHand = null;
-        setStartArmed = false;
-      });
-      _prepareCurrentSet();
-      return;
+  Future<void> _cancelFromDisconnectedOverlay() async {
+    await _saveSession(completed: false);
+    if (mounted) {
+      Navigator.of(context).pop();
     }
-
-    if (entry == null) {
-      setState(() {
-        phase = SessionPhase.finished;
-        _confettiController.play();
-        suggestedSwitchHand = null;
-        activeHand = null;
-        pendingHandInSet = null;
-        setStartArmed = false;
-      });
-      _syncTargetFeedback(currentForce);
-      _syncTargetFeedback(currentForce);
-      return;
-    }
-
-    if (currentSet < entry.sets) {
-      setState(() {
-        currentSet++;
-        suggestedSwitchHand = null;
-        activeHand = exercise?.isSideSwitching == true
-            ? entry.startingHand
-            : null;
-        pendingHandInSet = null;
-        setStartArmed = false;
-      });
-      _prepareCurrentSet();
-      return;
-    }
-
-    setState(() {
-      currentEntryIndex++;
-      currentSet = 1;
-      suggestedSwitchHand = null;
-      activeHand = null;
-      pendingHandInSet = null;
-      setStartArmed = false;
-    });
-    _prepareCurrentSet();
-    _syncTargetFeedback(currentForce);
-    _syncTargetFeedback(currentForce);
   }
 
   @override
   Widget build(BuildContext context) {
-    final WorkoutExerciseEntry? entry = currentEntry;
-    final Exercise? exercise = currentExercise;
-    final ExerciseHand? activeHandForUi = activeHand;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) {
+          return;
+        }
+        _handlePopAttempt();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Active: ${widget.workout.name}'),
+          actions: [
+            ListenableBuilder(
+              listenable: CraneScaleService.instance,
+              builder: (context, _) {
+                final state = CraneScaleService.instance.state;
+                IconData icon = Icons.bluetooth_disabled;
+                Color? color = Theme.of(context).disabledColor;
 
-    final int targetMinForce = _targetMinForceKg(exercise, entry);
-    final int targetMaxForce = _targetMaxForceKg(exercise, entry);
+                if (state == ScaleConnectionState.connected) {
+                  icon = Icons.bluetooth_connected;
+                  color = Colors.green;
+                } else if (state == ScaleConnectionState.scanning ||
+                    state == ScaleConnectionState.connecting) {
+                  icon = Icons.bluetooth_searching;
+                  color = Colors.orange;
+                }
+
+                return IconButton(
+                  icon: Icon(icon, color: color),
+                  onPressed: () => BluetoothConnectionSheet.show(context),
+                  tooltip: 'Bluetooth connection',
+                );
+              },
+            ),
+          ],
+        ),
+        body: ListenableBuilder(
+          listenable: CraneScaleService.instance,
+          builder: (context, _) {
+            final bool isConnected = CraneScaleService.instance.state ==
+                ScaleConnectionState.connected;
+
+            return Stack(
+              children: [
+                ForceInputDummy(
+                  isEnabled: CraneScaleService.instance.isSimulated,
+                  sensitivity: dummySensitivity,
+                  minForce: 0,
+                  maxForce: widget.maxForceKg,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: ListenableBuilder(
+                      listenable: controller,
+                      builder: (context, _) => _buildSessionContent(context),
+                    ),
+                  ),
+                ),
+                if (!isConnected) _buildDisconnectedOverlay(context),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSessionContent(BuildContext context) {
+    final WorkoutExerciseEntry? entry = controller.currentEntry;
+    final Exercise? exercise = controller.currentExercise;
+    final ExerciseHand? activeHandForUi = controller.activeHand;
+    final SessionPhase phase = controller.phase;
 
     String actionLabel = 'Target';
     String actionValue = '';
@@ -574,14 +316,14 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
     if (phase == SessionPhase.activeSet) {
       if (entry?.mode == ExerciseMode.duration) {
         actionLabel = 'Hold';
-        actionValue = '${remainingSetSeconds}s';
+        actionValue = '${controller.remainingSetSeconds}s';
       } else {
         actionLabel = 'Target';
         actionValue = '${entry?.reps ?? 0} Reps';
       }
     } else if (phase == SessionPhase.resting) {
       actionLabel = 'Rest';
-      actionValue = '${remainingRestSeconds}s';
+      actionValue = '${controller.remainingRestSeconds}s';
       actionColor = Colors.orange;
     } else if (phase == SessionPhase.waitingForForce) {
       actionLabel = 'Target';
@@ -593,289 +335,308 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
       actionValue = 'Done';
     }
 
+    final int chartMaxForce = max(
+      20,
+      max(_observedMaxForce, controller.targetMaxForceKg) + 5,
+    );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Active: ${widget.workout.name}'),
-        actions: [
-          ListenableBuilder(
-            listenable: CraneScaleService.instance,
-            builder: (context, _) {
-              final state = CraneScaleService.instance.state;
-              IconData icon = Icons.bluetooth_disabled;
-              Color? color = Theme.of(context).disabledColor;
-
-              if (state == ScaleConnectionState.connected) {
-                icon = Icons.bluetooth_connected;
-                color = Colors.green;
-              } else if (state == ScaleConnectionState.scanning || state == ScaleConnectionState.connecting) {
-                icon = Icons.bluetooth_searching;
-                color = Colors.orange;
-              }
-
-              return IconButton(
-                icon: Icon(icon, color: color),
-                onPressed: () => BluetoothConnectionSheet.show(context),
-                tooltip: 'Bluetooth connection',
-              );
-            },
-          ),
-        ],
-      ),
-      body: ListenableBuilder(
-        listenable: CraneScaleService.instance,
-        builder: (context, _) {
-          final bool isConnected = CraneScaleService.instance.state == ScaleConnectionState.connected;
-          
-          return Stack(
-            children: [
-              ForceInputDummy(
-                isEnabled: CraneScaleService.instance.isSimulated,
-                sensitivity: dummySensitivity,
-                minForce: minForceKg,
-                maxForce: maxForceKg,
-                onForceChanged: _onForceChanged,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (phase == SessionPhase.finished)
+          Expanded(
+            child: Stack(
+              alignment: Alignment.topCenter,
+              children: [
+                Center(
+                  child: Text(
+                    widget.workout.entries.isEmpty
+                        ? 'No entries in this workout.'
+                        : 'Workout complete.',
+                  ),
+                ),
+                ConfettiWidget(
+                  confettiController: _confettiController,
+                  blastDirectionality: BlastDirectionality.explosive,
+                  particleDrag: 0.05,
+                  emissionFrequency: 0.05,
+                  numberOfParticles: 50,
+                  gravity: 0.2,
+                  shouldLoop: false,
+                  colors: const [
+                    Colors.green,
+                    Colors.blue,
+                    Colors.pink,
+                    Colors.orange,
+                    Colors.purple,
+                  ],
+                ),
+              ],
+            ),
+          )
+        else if (entry == null)
+          const Expanded(
+            child: Center(
+              child: Text('No entries in this workout.'),
+            ),
+          )
+        else
+          Expanded(
+            child: SizedBox(
+              width: double.infinity,
+              child: Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-
-                      if (phase == SessionPhase.finished)
-                        Expanded(
-                          child: Stack(
-                            alignment: Alignment.topCenter,
-                            children: [
-                              const Center(
-                                child: Text('Workout complete.'),
-                              ),
-                              ConfettiWidget(
-                                confettiController: _confettiController,
-                                blastDirectionality: BlastDirectionality.explosive,
-                                particleDrag: 0.05,
-                                emissionFrequency: 0.05,
-                                numberOfParticles: 50,
-                                gravity: 0.2,
-                                shouldLoop: false,
-                                colors: const [
-                                  Colors.green,
-                                  Colors.blue,
-                                  Colors.pink,
-                                  Colors.orange,
-                                  Colors.purple
-                                ],
-                              ),
-                            ],
+                      Text(
+                        'Entry ${controller.currentEntryIndex + 1}/${widget.workout.entries.length}',
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        exercise?.name ?? 'Missing exercise reference',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Set ${controller.currentSet}/${entry.sets}'),
+                      if (activeHandForUi != null) ...[
+                        const SizedBox(height: 4),
+                        Visibility(
+                          visible: phase != SessionPhase.resting,
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          child: Text(
+                            'Active hand: ${_handLabel(activeHandForUi)}',
                           ),
-                        )
-                      else if (entry == null)
-                const Expanded(
-                  child: Center(
-                    child: Text('No entries in this workout.'),
-                  ),
-                )
-              else
-                Expanded(
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Row(
                         children: [
-                          Text('Entry ${currentEntryIndex + 1}/${widget.workout.entries.length}'),
-                          const SizedBox(height: 8),
-                          Text(
-                            exercise?.name ?? 'Missing exercise reference',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 8),
-                          Text('Set $currentSet/${entry.sets}'),
-                          if (activeHandForUi != null) ...[
-                            const SizedBox(height: 4),
-                            Visibility(
-                              visible: phase != SessionPhase.resting,
-                              maintainSize: true,
-                              maintainAnimation: true,
-                              maintainState: true,
-                              child: Text('Active hand: ${_handLabel(activeHandForUi)}'),
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('LIVE FORCE', style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 1.2)),
-                                    Text(
-                                      '${currentForce}kg',
-                                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                                        color: isInTargetRange ? Colors.green : null,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(actionLabel.toUpperCase(), style: Theme.of(context).textTheme.labelSmall?.copyWith(letterSpacing: 1.2)),
-                                    Text(
-                                      actionValue,
-                                      style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                                        color: actionColor,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
                           Expanded(
-                            child: Stack(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                ForceChart(
-                                  dataPoints: dataPoints,
-                                  chartMaxForce: maxForceKg,
-                                  targetMinForce: targetMinForce,
-                                  targetMaxForce: targetMaxForce,
-                                  showTargetArea: phase != SessionPhase.resting,
+                                Text(
+                                  'LIVE FORCE',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(letterSpacing: 1.2),
                                 ),
-                                AnimatedInstructionOverlay(
-                                  mainText: (phase == SessionPhase.waitingForForce && setStartArmed)
-                                      ? 'PULL'
-                                      : 'RELEASE',
-                                  subText: (activeHandForUi != null && phase == SessionPhase.waitingForForce && setStartArmed)
-                                      ? '${_handLabel(activeHandForUi)} Hand'
-                                      : null,
-                                  backgroundColor: (phase == SessionPhase.waitingForForce && setStartArmed)
-                                      ? Theme.of(context).colorScheme.primaryContainer
-                                      : Theme.of(context).colorScheme.secondaryContainer,
-                                  textColor: (phase == SessionPhase.waitingForForce && setStartArmed)
-                                      ? Theme.of(context).colorScheme.onPrimaryContainer
-                                      : Theme.of(context).colorScheme.onSecondaryContainer,
-                                  isVisible: (phase == SessionPhase.waitingForForce && !setStartArmed) ||
-                                      (phase == SessionPhase.waitingForForce && setStartArmed) ||
-                                      (phase != SessionPhase.activeSet && currentForce > 0),
+                                Text(
+                                  '${controller.currentForce}kg',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .displayMedium
+                                      ?.copyWith(
+                                        color: _inActiveTargetZone
+                                            ? Colors.green
+                                            : null,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          if (phase == SessionPhase.waitingForForce)
-                            Text(
-                              setStartArmed
-                                  ? 'Apply at least ${widget.forceThresholdKg} kg to start the set.'
-                                  : 'Release to 0 kg first, then apply at least ${widget.forceThresholdKg} kg to start.',
-                              style: Theme.of(context).textTheme.bodyMedium,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  actionLabel.toUpperCase(),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(letterSpacing: 1.2),
+                                ),
+                                Text(
+                                  actionValue,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .displayMedium
+                                      ?.copyWith(
+                                        color: actionColor,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                ),
+                              ],
                             ),
-                          if (phase == SessionPhase.resting && suggestedSwitchHand != null)
-                            Text(
-                              'Preparing ${_handLabel(suggestedSwitchHand!)} hand...',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
+                          ),
                         ],
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: Stack(
+                          children: [
+                            ForceChart(
+                              dataPoints: dataPoints,
+                              chartMaxForce: chartMaxForce,
+                              targetMinForce: controller.targetMinForceKg,
+                              targetMaxForce: controller.targetMaxForceKg,
+                              showTargetArea: phase != SessionPhase.resting,
+                            ),
+                            AnimatedInstructionOverlay(
+                              mainText: (phase ==
+                                          SessionPhase.waitingForForce &&
+                                      controller.setStartArmed)
+                                  ? 'PULL'
+                                  : 'RELEASE',
+                              subText: (activeHandForUi != null &&
+                                      phase == SessionPhase.waitingForForce &&
+                                      controller.setStartArmed)
+                                  ? '${_handLabel(activeHandForUi)} Hand'
+                                  : null,
+                              backgroundColor: (phase ==
+                                          SessionPhase.waitingForForce &&
+                                      controller.setStartArmed)
+                                  ? Theme.of(context).colorScheme.primaryContainer
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .secondaryContainer,
+                              textColor: (phase ==
+                                          SessionPhase.waitingForForce &&
+                                      controller.setStartArmed)
+                                  ? Theme.of(context)
+                                      .colorScheme
+                                      .onPrimaryContainer
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSecondaryContainer,
+                              isVisible: phase == SessionPhase.waitingForForce ||
+                                  (phase != SessionPhase.activeSet &&
+                                      controller.currentForce > 0),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      if (phase == SessionPhase.waitingForForce)
+                        Text(
+                          controller.setStartArmed
+                              ? 'Apply at least ${widget.forceThresholdKg} kg to start the set.'
+                              : 'Release to 0 kg first, then apply at least ${widget.forceThresholdKg} kg to start.',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      if (phase == SessionPhase.resting &&
+                          controller.suggestedSwitchHand != null)
+                        Text(
+                          'Preparing ${_handLabel(controller.suggestedSwitchHand!)} hand...',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      if (controller.isUsingFallbackMaxLift)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'No benchmark saved for this exercise — '
+                            'assuming a ${controller.config.fallbackMaxLiftKg} kg max lift. '
+                            'Measure it from the exercise page for accurate targets.',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color:
+                                      Theme.of(context).colorScheme.tertiary,
+                                ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  if (phase == SessionPhase.finished)
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Done'),
-                      ),
-                    )
-                  else if (entry == null)
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: _goToNextSetOrEntry,
-                        child: const Text('Skip Missing Entry'),
-                      ),
-                    )
-                  else if (phase == SessionPhase.resting)
-                    Expanded(
-                      child: FilledButton.tonal(
-                        onPressed: suggestedSwitchHand == null ? _goToNextSetOrEntry : null,
-                        child: Text(
-                          suggestedSwitchHand == null
-                              ? 'Skip Rest'
-                              : 'Waiting for auto switch',
-                        ),
-                      ),
-                    )
-                  else
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: phase == SessionPhase.activeSet
-                            ? _completeCurrentSet
-                            : null,
-                        child: Text(
-                          entry.mode == ExerciseMode.duration
-                              ? 'Finish Set Early'
-                              : 'Complete Set',
-                        ),
-                      ),
-                    ),
-                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            if (phase == SessionPhase.finished)
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Done'),
+                ),
+              )
+            else if (exercise == null)
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => controller.skipEntry(DateTime.now()),
+                  child: const Text('Skip Missing Exercise'),
+                ),
+              )
+            else if (phase == SessionPhase.resting)
+              Expanded(
+                child: FilledButton.tonal(
+                  onPressed: controller.suggestedSwitchHand == null
+                      ? () => controller.skipRest(DateTime.now())
+                      : null,
+                  child: Text(
+                    controller.suggestedSwitchHand == null
+                        ? 'Skip Rest'
+                        : 'Waiting for auto switch',
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: FilledButton(
+                  onPressed: phase == SessionPhase.activeSet
+                      ? () => controller.completeCurrentSet(DateTime.now())
+                      : null,
+                  child: Text(
+                    entry?.mode == ExerciseMode.duration
+                        ? 'Finish Set Early'
+                        : 'Complete Set',
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDisconnectedOverlay(BuildContext context) {
+    return Container(
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.bluetooth_disabled,
+                size: 64,
+                color: Colors.orange,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Device Connection Required',
+                style: Theme.of(context).textTheme.headlineSmall,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Please connect a device or select the simulated device to continue the workout.',
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () => BluetoothConnectionSheet.show(context),
+                child: const Text('Connect Device'),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _cancelFromDisconnectedOverlay,
+                child: const Text('Cancel Workout'),
               ),
             ],
           ),
         ),
       ),
-      if (!isConnected)
-        Container(
-          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.bluetooth_disabled, size: 64, color: Colors.orange),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Device Connection Required',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Please connect a device or select the simulated device to continue the workout.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: () => BluetoothConnectionSheet.show(context),
-                    child: const Text('Connect Device'),
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel Workout'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  },
-),
     );
   }
 }
-

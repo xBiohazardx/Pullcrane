@@ -75,6 +75,27 @@ class _BluetoothConnectionSheetState extends State<BluetoothConnectionSheet> {
                   ),
                 ),
                 const Divider(height: 1),
+                if (CraneScaleService.instance.lastError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            CraneScaleService.instance.lastError!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (state == ScaleConnectionState.connected && (connectedDevice != null || CraneScaleService.instance.isSimulated)) ...[
                    ListTile(
                      leading: const Icon(Icons.bluetooth_connected, color: Colors.green),

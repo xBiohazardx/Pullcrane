@@ -46,18 +46,30 @@ class _HomePageState extends State<HomePage> {
         await AppStores.workouts.listWorkouts();
     final AppSettings settings = await AppStores.settings.load();
 
-    final Workout workoutToStart = latestWorkouts
-        .where((item) => item.id == workout.id)
-        .cast<Workout?>()
-        .firstWhere((item) => item != null, orElse: () => workout)!;
-
-    final Map<String, Exercise> byId = <String, Exercise>{
-      for (final Exercise exercise in latestExercises) exercise.id: exercise,
-    };
+    Workout workoutToStart = workout;
+    for (final Workout candidate in latestWorkouts) {
+      if (candidate.id == workout.id) {
+        workoutToStart = candidate;
+        break;
+      }
+    }
 
     if (!mounted) {
       return;
     }
+
+    if (workoutToStart.entries.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This workout has no exercises. Add some first.'),
+        ),
+      );
+      return;
+    }
+
+    final Map<String, Exercise> byId = <String, Exercise>{
+      for (final Exercise exercise in latestExercises) exercise.id: exercise,
+    };
 
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -68,6 +80,7 @@ class _HomePageState extends State<HomePage> {
           targetHysteresisKg: settings.targetHysteresisKg,
           enableTargetHaptics: settings.enableTargetHaptics,
           requireZeroBeforeSetStart: settings.requireZeroBeforeSetStart,
+          maxForceKg: settings.maxForceKg,
         ),
       ),
     );
@@ -114,7 +127,9 @@ class _HomePageState extends State<HomePage> {
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: FilledButton.icon(
-                                  onPressed: () => _startWorkout(workout),
+                                  onPressed: workout.entries.isEmpty
+                                      ? null
+                                      : () => _startWorkout(workout),
                                   icon: const Icon(Icons.play_arrow),
                                   label: const Text('Start workout'),
                                 ),

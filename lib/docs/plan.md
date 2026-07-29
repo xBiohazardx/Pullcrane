@@ -1,85 +1,62 @@
 # Pullcrane Plan
 
-## Confirmed decisions
+This document describes the app **as built**. It was rewritten after the
+initial delivery phases to match the actual implementation.
 
-- Navigation tabs (order): Home, Workouts, Exercises, Benchmark, Settings.
-- Data: local only, no cloud sync.
-- Exercise type: exactly one mode per exercise (reps or duration).
-- Rest handling: exercise has default rest; workout entry can override it.
-- Include a default "Rest" exercise template.
-- Exercises must define a target force.
-- Target force supports two modes: absolute kg or relative (% of user max lift).
-- Max lift is measured per exercise (left/right hand where applicable) and retains historical records by date.
-- Force trigger: start only above a configurable threshold.
-- Threshold default: 10kg (from settings).
-- If force drops during a timed set: timer continues.
-- Hand switching: app-controlled only (user switches when prompted).
-- Rest carryover on hand switch: subtract from next opposite-side rest, clamped at 0.
-- Force source for now: keep dummy input; Bluetooth comes later.
-- Workout history/logging: planned, but not implemented in current phase.
+## Confirmed decisions (current state)
 
-## Delivery phases
+- Navigation tabs (order): Home, Workouts, Exercises, Settings.
+  Benchmarking lives on the exercise form/progression pages, not as its own tab.
+- Data: local SQLite only (sqflite on Android/iOS, sqflite_common_ffi on
+  desktop), no cloud sync.
+- Schema is versioned with incremental, data-preserving migrations:
+  - v2 → v3: settings table rebuilt (dead `user_max_lift_kg` dropped,
+    `max_force_kg` added).
+  - v3 → v4: workout history tables (`workout_sessions`, `set_logs`).
+- Exercises: name, description, side-switching flag, per-hand max lifts,
+  dated max-lift history.
+- Workouts: ordered entries; each entry defines sets, mode (reps or
+  duration), reps/duration, rest, target force, and starting hand.
+- Target force: absolute kg or relative (% of the exercise's max lift for the
+  active hand). Without a benchmark, a 60 kg fallback is used and surfaced in
+  the active workout UI.
+- Force ceiling (`maxForceKg`, default 200 kg) is configurable in Settings and
+  applies to BLE parsing, simulated input, targets, and charts.
+- Force trigger: a set starts only above the configurable threshold
+  (default 10 kg), optionally requiring a release to 0 kg first.
+- If force drops during a timed set, the timer continues.
+- Hand switching: app-controlled. Rest before switching equals the opposite
+  hand's *leftover* rest (clamped at 0); leftover rest debt persists across
+  entries within a workout on purpose (physiological carryover).
+- All session countdowns are anchored to wall-clock end times, so backgrounded
+  apps and screen lock do not stretch sets or rests. The screen is kept awake
+  during workouts (wakelock).
+- Force source: BLE crane scale (WH-C06, passive advertisements; device name
+  filter configurable, default `IF_B7`) or a simulated finger-drag device.
+- Workout sessions are recorded (start/finish time, completion flag, per-set
+  target vs. peak force, planned vs. actual duration) and survive workout and
+  exercise deletion (denormalized names, no foreign keys).
+- History UI: session list + per-session detail under the Workouts tab.
+  Per-exercise analytics (sessions, time under tension, best peak, recent
+  sets) on the exercise progression page.
 
-### Phase 1 - App shell and navigation
+## Architecture
 
-- Add bottom navigation with Home, Workouts, Exercises, Settings.
-- Keep current force training screen as Home.
+- `lib/domain/models/` — plain data classes.
+- `lib/domain/services/` — `CraneScaleService` (BLE + simulated input
+  singleton), `CraneScaleParser` (pure advertisement parsing),
+  `WorkoutSessionController` (pure, timer-free session state machine; the UI
+  feeds it force readings and wall-clock ticks).
+- `lib/data/` — `AppDatabase` (schema + migrations) and stores for exercises,
+  workouts, settings, and sessions.
+- `lib/ui/` — pages per tab; the active workout page is a thin binding over
+  the session controller.
+- Tests: unit tests for the engine, BLE parser, stores, and DB migrations
+  (`flutter test`).
 
-### Phase 2 - Domain and local storage
+## Deferred / future ideas
 
-- Model Exercise, Workout, WorkoutExerciseEntry, and execution/session models.
-- Add local repository layer and persistence for exercises/workouts.
-
-### Phase 3 - CRUD
-
-- Exercises: create, edit, list, delete.
-- Workouts: create, edit, list, delete.
-- Workout editor: ordered exercise entries with set count and optional rest override.
-- Add default "Rest" exercise.
-- Extend exercise model/forms with target force mode/value:
-  - absolute target in kg, or
-  - relative target as % of user max lift.
-
-### Phase 4 - Max lift measurement page
-
-- Add a benchmark tab with list of all benchmarkable exercises.
-- Open per-exercise max-lift measurement screen from benchmark list.
-- Measure current and max session force. Use tap-to-switch hands instead of tabs.
-- Save measured value(s) back to the selected exercise history without closing the page.
-- Ensure force exceeds threshold setting before allowing save.
-- Render visual progression graph below force bars:
-  - Display filtered history (latest measurement per calendar day).
-  - Use dynamically date-scaled X-axis labeled `DD.MM.`.
-  - Adapt graph for one line or two lines (Left/Right) depending on exercise side switching flag.
-
-### Phase 5 - Execution engine
-
-- Build state machine for set flow: waiting -> active set -> rest -> next.
-- Timed exercises start only when force >= threshold.
-- Reps exercises track completion and transition to rest.
-- Rest timer starts only when exercise is completed.
-- Force drop during timed set does not pause timer.
-- Show target force per exercise (resolved from absolute value or % of user max lift).
-
-### Phase 6 - Guided hand switching
-
-- Mark exercises as side-switching where needed.
-- Prompt hand switch at defined points in workout flow.
-- Subtract unused rest from opposite-hand next rest, clamp to 0.
-
-### Phase 7 - Settings
-
-- Add configurable default force threshold (default 10kg).
-- Add execution preferences needed by engine behavior.
-- Add max-lift related settings entry points.
-
-### Phase 8 - Bluetooth integration
-
-- Add force input adapter abstraction.
-- Keep dummy adapter for testing.
-- Plug in BLE crane scale adapter.
-
-### Deferred (planned, not now)
-
-- Workout history/session logs.
-- Progress analytics derived from stored sessions.
+- Richer analytics (volume trends, force curves per set, adherence).
+- Automatic rep detection for rep-mode sets.
+- Export/backup of the database.
+- Multiple BLE device profiles.

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:pullcrane/domain/services/bluetooth_manager.dart';
 
+/// Wraps a page and translates vertical finger drags into simulated force
+/// readings on [CraneScaleService] (when the simulated device is connected).
 class ForceInputDummy extends StatefulWidget {
   final Widget child;
-  final ValueChanged<int>? onForceChanged;
-  final ValueChanged<bool>? onTouchingChanged;
   final double sensitivity;
   final int minForce;
   final int maxForce;
@@ -13,8 +13,6 @@ class ForceInputDummy extends StatefulWidget {
   const ForceInputDummy({
     super.key,
     required this.child,
-    this.onForceChanged,
-    this.onTouchingChanged,
     required this.sensitivity,
     this.minForce = 0,
     this.maxForce = 100,
@@ -33,7 +31,6 @@ class _ForceInputDummyState extends State<ForceInputDummy> {
   }
 
   void _updateForce(int value) {
-    widget.onForceChanged?.call(value);
     CraneScaleService.instance.updateSimulatedForce(value);
   }
 
@@ -43,15 +40,10 @@ class _ForceInputDummyState extends State<ForceInputDummy> {
 
     return Listener(
       behavior: HitTestBehavior.opaque,
-      onPointerDown: (_) {
-        widget.onTouchingChanged?.call(true);
-      },
       onPointerUp: (_) {
-        widget.onTouchingChanged?.call(false);
         _updateForce(widget.minForce);
       },
       onPointerCancel: (_) {
-        widget.onTouchingChanged?.call(false);
         _updateForce(widget.minForce);
       },
       child: GestureDetector(
@@ -69,4 +61,3 @@ class _ForceInputDummyState extends State<ForceInputDummy> {
     );
   }
 }
-

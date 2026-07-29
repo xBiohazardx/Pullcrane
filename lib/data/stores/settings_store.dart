@@ -20,7 +20,9 @@ class SettingsStore {
       forceThresholdKg: row['force_threshold_kg'] as int,
       targetHysteresisKg: row['target_hysteresis_kg'] as int,
       enableTargetHaptics: (row['enable_target_haptics'] as int) == 1,
-      requireZeroBeforeSetStart: (row['require_zero_before_set_start'] as int) == 1,
+      requireZeroBeforeSetStart:
+          (row['require_zero_before_set_start'] as int) == 1,
+      maxForceKg: (row['max_force_kg'] as int?) ?? AppSettings.defaults.maxForceKg,
     );
   }
 
@@ -31,10 +33,11 @@ class SettingsStore {
       {
         'id': 1,
         'force_threshold_kg': settings.forceThresholdKg,
-        'user_max_lift_kg': 60, // Dummy value to prevent NOT NULL constraint error on older databases
         'target_hysteresis_kg': settings.targetHysteresisKg,
         'enable_target_haptics': settings.enableTargetHaptics ? 1 : 0,
-        'require_zero_before_set_start': settings.requireZeroBeforeSetStart ? 1 : 0,
+        'require_zero_before_set_start':
+            settings.requireZeroBeforeSetStart ? 1 : 0,
+        'max_force_kg': settings.maxForceKg,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );

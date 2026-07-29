@@ -16,7 +16,6 @@ class MaxLiftMeasurementPage extends StatefulWidget {
 
 class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
   static const int minForceKg = 0;
-  static const int maxForceKg = 100;
   static const double dummySensitivity = 0.3;
 
   late Exercise currentExercise;
@@ -27,6 +26,7 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
   int maxRightForceKg = 0;
 
   int forceThresholdKg = 10;
+  int maxForceKg = 200;
   bool isSettingsLoaded = false;
 
   bool get isTwoHandMeasurement => currentExercise.isSideSwitching;
@@ -50,6 +50,9 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
     selectedHand = ExerciseHand.left;
     maxLeftForceKg = 0;
     maxRightForceKg = 0;
+    // Register synchronously so dispose() can always remove the listener,
+    // even if the page is popped before settings finish loading.
+    CraneScaleService.instance.addListener(_onBleForceChanged);
     _loadSettings();
   }
 
@@ -58,11 +61,10 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
     if (mounted) {
       setState(() {
         forceThresholdKg = settings.forceThresholdKg;
+        maxForceKg = settings.maxForceKg;
         isSettingsLoaded = true;
       });
     }
-    CraneScaleService.instance.addListener(_onBleForceChanged);
-    selectedHand = ExerciseHand.left;
   }
 
   @override
@@ -74,7 +76,7 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
   void _onBleForceChanged() {
     if (!mounted) return;
     if (CraneScaleService.instance.state == ScaleConnectionState.connected) {
-      _onForceChanged(CraneScaleService.instance.currentForce);
+      _applyForce(CraneScaleService.instance.currentForce);
     }
   }
 
@@ -82,11 +84,7 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
     return hand == ExerciseHand.left ? 'Left' : 'Right';
   }
 
-  void _onForceChanged(int forceKg) {
-    if (CraneScaleService.instance.state == ScaleConnectionState.connected && forceKg != CraneScaleService.instance.currentForce) {
-      return;
-    }
-
+  void _applyForce(int forceKg) {
     final int clamped = forceKg.clamp(minForceKg, maxForceKg);
     setState(() {
       if (selectedHand == ExerciseHand.left) {
@@ -276,7 +274,6 @@ class _MaxLiftMeasurementPageState extends State<MaxLiftMeasurementPage> {
                 sensitivity: dummySensitivity,
                 minForce: minForceKg,
                 maxForce: maxForceKg,
-                onForceChanged: _onForceChanged,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(

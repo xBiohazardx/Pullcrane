@@ -1,7 +1,10 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:pullcrane/data/app_stores.dart';
+import 'package:pullcrane/domain/models/app_settings.dart';
+import 'package:pullcrane/domain/services/bluetooth_manager.dart';
 import 'package:pullcrane/ui/app_shell.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -9,6 +12,13 @@ Future<void> main() async {
   StackTrace? startupStackTrace;
   try {
     await AppStores.init();
+
+    // Apply persisted configuration to the force input service.
+    final AppSettings settings = await AppStores.settings.load();
+    CraneScaleService.instance.maxForceKg = settings.maxForceKg;
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    CraneScaleService.instance.deviceNameFilter =
+        prefs.getString('ble_device_name') ?? CraneScaleService.defaultDeviceName;
   } catch (error, stackTrace) {
     startupError = error;
     startupStackTrace = stackTrace;

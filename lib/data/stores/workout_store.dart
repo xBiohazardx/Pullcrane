@@ -89,6 +89,23 @@ class WorkoutStore {
     });
   }
 
+  /// Names of all workouts that contain at least one entry for [exerciseId].
+  /// Used to warn about the cascade when deleting an exercise.
+  Future<List<String>> listWorkoutNamesUsingExercise(String exerciseId) async {
+    final Database db = await AppDatabase.instance.database;
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      '''
+      SELECT DISTINCT w.name AS name
+      FROM ${AppDatabase.workoutsTable} w
+      INNER JOIN ${AppDatabase.workoutEntriesTable} e ON e.workout_id = w.id
+      WHERE e.exercise_id = ?
+      ORDER BY LOWER(w.name) ASC
+      ''',
+      <Object?>[exerciseId],
+    );
+    return rows.map((row) => row['name'] as String).toList();
+  }
+
   Future<void> deleteWorkout(String id) async {
     final Database db = await AppDatabase.instance.database;
     await db.transaction((Transaction txn) async {
