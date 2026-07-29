@@ -96,12 +96,17 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
                     children: [
                       DropdownButtonFormField<String>(
                         initialValue: selectedExerciseId,
+                        isExpanded: true,
                         decoration: const InputDecoration(labelText: 'Exercise'),
                         items: widget.availableExercises
                             .map(
                               (exercise) => DropdownMenuItem<String>(
                                 value: exercise.id,
-                                child: Text(exercise.name),
+                                child: Text(
+                                  exercise.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             )
                             .toList(),
@@ -396,6 +401,7 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
         title: Text(isEditing ? 'Edit Workout' : 'Create Workout'),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'workout_form_fab',
         onPressed: _showEntryDialog,
         icon: const Icon(Icons.add),
         label: const Text('Add Exercise'),
@@ -449,7 +455,11 @@ class _WorkoutFormPageState extends State<WorkoutFormPage> {
                 ),
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  title: Text(exercise?.name ?? 'Unknown exercise'),
+                  title: Text(
+                    exercise?.name ?? 'Unknown exercise',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   subtitle: Text(
                     'Sets: ${item.sets} • Rest: ${item.restSeconds}s\n'
                     '${item.mode == ExerciseMode.reps ? '${item.reps} reps' : '${item.durationSeconds}s'} • '

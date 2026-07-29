@@ -33,6 +33,17 @@ initial delivery phases to match the actual implementation.
   during workouts (wakelock).
 - Force source: BLE crane scale (WH-C06, passive advertisements; device name
   filter configurable, default `IF_B7`) or a simulated finger-drag device.
+  - On Android, force data streams through a native Kotlin `FastBleScanHandler`
+    (EventChannel, LOW_LATENCY scan) with 3x retry and a 10 s data watchdog.
+    The native side filters by the compiled-in `IF_B7` name and does not clamp
+    force (the Dart side clamps to the configured max force).
+  - On other platforms, a Dart fallback parses advertisements from the
+    universal_ble scan stream via `CraneScaleParser`.
+  - universal_ble is pinned to ^1.2.0: 2.x requires Dart >=3.11.4/3.12
+    (Flutter >=3.44), 1.2.0 offers the same ScanFilter API on Dart 3.11.0.
+- Rep-mode sets count reps automatically: a rep counts when force crosses the
+  threshold and then drops below a release threshold (half the trigger
+  threshold, min 2 kg); the set auto-completes at the planned rep count.
 - Workout sessions are recorded (start/finish time, completion flag, per-set
   target vs. peak force, planned vs. actual duration) and survive workout and
   exercise deletion (denormalized names, no foreign keys).
@@ -44,7 +55,8 @@ initial delivery phases to match the actual implementation.
 
 - `lib/domain/models/` — plain data classes.
 - `lib/domain/services/` — `CraneScaleService` (BLE + simulated input
-  singleton), `CraneScaleParser` (pure advertisement parsing),
+  singleton), `FastBleScanner` (native Android force stream via EventChannel),
+  `CraneScaleParser` (pure advertisement parsing, non-Android fallback),
   `WorkoutSessionController` (pure, timer-free session state machine; the UI
   feeds it force readings and wall-clock ticks).
 - `lib/data/` — `AppDatabase` (schema + migrations) and stores for exercises,

@@ -95,6 +95,7 @@ class _ExercisesPageState extends State<ExercisesPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Exercises')),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'exercises_fab',
         onPressed: () => _openForm(),
         child: const Icon(Icons.add),
       ),
@@ -111,7 +112,11 @@ class _ExercisesPageState extends State<ExercisesPage> {
                     : 'Single configuration';
 
                 return ListTile(
-                  title: Text(exercise.name),
+                  title: Text(
+                    exercise.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   subtitle: Text('${exercise.description}\n$handInfo'),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),

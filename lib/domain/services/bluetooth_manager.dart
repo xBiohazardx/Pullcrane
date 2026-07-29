@@ -3,20 +3,26 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pullcrane/domain/services/crane_scale_parser.dart';
+import 'package:pullcrane/domain/services/fast_ble_scanner.dart';
 import 'package:universal_ble/universal_ble.dart';
 
 enum ScaleConnectionState { disconnected, scanning, connecting, connected }
 
 /// Singleton wrapping the BLE crane scale (WH-C06) and the simulated
-/// finger-drag input. The scale broadcasts weight in its advertisements, so
-/// "connected" means "advertisements from the selected device parse
-/// successfully" — there is no GATT connection.
+/// finger-drag input. The scale broadcasts weight in its advertisements.
+///
+/// On Android, force data is streamed by the native [FastBleScanner]
+/// (low-latency scan with retry + watchdog). On other platforms a Dart
+/// fallback parses advertisements from the universal_ble scan stream.
 class CraneScaleService extends ChangeNotifier {
   static final CraneScaleService instance = CraneScaleService._();
 
   static const String defaultDeviceName = 'IF_B7';
   static const Duration scanTimeout = Duration(seconds: 15);
   static const Duration connectTimeout = Duration(seconds: 10);
+  static const Duration _dataTimeout = Duration(seconds: 10);
+  static const int _maxFastScannerRetries = 3;
+  static const Duration _fastScannerRetryDelay = Duration(seconds: 1);
 
   CraneScaleService._() {
     _init();
@@ -39,7 +45,9 @@ class CraneScaleService extends ChangeNotifier {
   String? get lastError => _lastError;
   String? _lastError;
 
-  /// Only advertisements from devices with exactly this name are considered.
+  /// Only devices advertising this exact name are considered (discovery and
+  /// Dart-fallback parsing). Note: the native Android fast scanner filters
+  /// by the name compiled into FastBleScanHandler.kt.
   String _deviceNameFilter = defaultDeviceName;
   String get deviceNameFilter => _deviceNameFilter;
   set deviceNameFilter(String value) {
@@ -52,13 +60,26 @@ class CraneScaleService extends ChangeNotifier {
 
   StreamSubscription<BleDevice>? _scanSubscription;
   StreamSubscription<AvailabilityState>? _availabilitySubscription;
+  FastBleScanner? _fastScanner;
   Timer? _scanTimeoutTimer;
   Timer? _connectTimeoutTimer;
   bool _isScanning = false;
+  bool _fastScanActive = false;
+  bool _isReconnecting = false;
+  Timer? _dataTimeoutTimer;
+  String? _connectingDeviceId;
+  int _fastScannerRetryCount = 0;
+  bool _retryPending = false;
+  bool _fastScannerErrorFlag = false;
+  Timer? _retryTimer;
 
   final Map<String, BleDevice> _scanResultById = <String, BleDevice>{};
   List<BleDevice> _scanResults = <BleDevice>[];
   List<BleDevice> get scanResults => _scanResults;
+
+  /// The native fast scanner only exists on Android.
+  bool get _useFastScanner =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   void _init() {
     _scanSubscription = UniversalBle.scanStream.listen((device) {
@@ -80,7 +101,8 @@ class CraneScaleService extends ChangeNotifier {
         hasUpdates = true;
       }
 
-      if (_connectedDevice?.deviceId == device.deviceId) {
+      // Dart fallback path (non-Android): parse force from advertisements.
+      if (!_useFastScanner && _connectedDevice?.deviceId == device.deviceId) {
         _connectedDevice = device;
         final int? parsedForce = _parseWeightFromManufacturerData(device);
         if (parsedForce != null) {
@@ -92,6 +114,7 @@ class CraneScaleService extends ChangeNotifier {
           if (parsedForce != _currentForce) {
             _currentForce = parsedForce;
           }
+          _resetDataTimeout();
           hasUpdates = true;
         }
       }
@@ -116,6 +139,8 @@ class CraneScaleService extends ChangeNotifier {
     _availabilitySubscription?.cancel();
     _scanTimeoutTimer?.cancel();
     _connectTimeoutTimer?.cancel();
+    _dataTimeoutTimer?.cancel();
+    _retryTimer?.cancel();
     super.dispose();
   }
 
@@ -156,7 +181,9 @@ class CraneScaleService extends ChangeNotifier {
     }
 
     try {
-      await UniversalBle.startScan();
+      await UniversalBle.startScan(
+        scanFilter: ScanFilter(withNamePrefix: [_deviceNameFilter]),
+      );
       _isScanning = true;
       _scanTimeoutTimer?.cancel();
       _scanTimeoutTimer = Timer(scanTimeout, () {
@@ -174,13 +201,11 @@ class CraneScaleService extends ChangeNotifier {
   }
 
   Future<void> stopScan() async {
+    _isScanning = false;
     _scanTimeoutTimer?.cancel();
     try {
       await UniversalBle.stopScan();
-    } catch (e) {
-      debugPrint('Stop scan error: $e');
-    }
-    _isScanning = false;
+    } catch (_) {}
     if (_state == ScaleConnectionState.scanning && _connectedDevice == null) {
       _state = ScaleConnectionState.disconnected;
       notifyListeners();
@@ -191,31 +216,146 @@ class CraneScaleService extends ChangeNotifier {
     if ((device.name ?? '') != _deviceNameFilter) {
       return;
     }
+    if (_isReconnecting) return;
+    _isReconnecting = true;
 
     _connectedDevice = device;
+    _connectingDeviceId = device.deviceId;
     _state = ScaleConnectionState.connecting;
     _lastError = null;
     notifyListeners();
 
-    // If no parseable advertisement arrives in time, give up instead of
-    // sitting in "connecting" forever.
-    _connectTimeoutTimer?.cancel();
-    _connectTimeoutTimer = Timer(connectTimeout, () {
-      if (_state == ScaleConnectionState.connecting) {
-        _lastError = 'No data received from "${device.name}". Is it on?';
-        _handleDisconnect();
-      }
-    });
+    _retryTimer?.cancel();
+    _retryPending = false;
+    _fastScannerRetryCount = 0;
 
     try {
-      // WH-C06 data is read from advertisement manufacturer data.
-      // Keep scanning with duplicates so force updates continue to stream.
-      if (!_isScanning) {
-        await startScan();
+      if (_useFastScanner) {
+        await stopScan();
+        await _startFastScanner(device.deviceId);
+      } else {
+        await _connectViaDartFallback();
       }
     } catch (e) {
       debugPrint('Connection error: $e');
       _lastError = 'Failed to connect: $e';
+      if (_useFastScanner) {
+        _fastScanActive = false;
+        _retryOrFallback();
+      } else {
+        _handleDisconnect();
+      }
+    } finally {
+      _isReconnecting = false;
+    }
+  }
+
+  /// Non-Android path: force is parsed from the (already running) universal
+  /// BLE scan stream; "connected" means a parseable advertisement arrives
+  /// before [connectTimeout].
+  Future<void> _connectViaDartFallback() async {
+    if (!_isScanning) {
+      await startScan();
+    }
+    _connectTimeoutTimer?.cancel();
+    _connectTimeoutTimer = Timer(connectTimeout, () {
+      if (_state == ScaleConnectionState.connecting) {
+        _lastError = 'No data received from the scale. Is it on?';
+        _handleDisconnect();
+      }
+    });
+  }
+
+  Future<void> _startFastScanner(String deviceId) async {
+    debugPrint('CraneScale: starting fast scanner for $deviceId');
+
+    await _fastScanner?.dispose();
+    _fastScanner = null;
+    _fastScannerErrorFlag = false;
+
+    _fastScanner = FastBleScanner(
+      onForceChanged: (int force) {
+        _resetDataTimeout();
+        final int clamped = force.clamp(0, maxForceKg);
+        if (_currentForce != clamped) {
+          _currentForce = clamped;
+          if (_state == ScaleConnectionState.connecting) {
+            _state = ScaleConnectionState.connected;
+            _fastScannerRetryCount = 0;
+            debugPrint('CraneScale: fast scanner connected, first force=$force');
+          }
+          notifyListeners();
+        }
+      },
+      onError: (Object error) {
+        debugPrint('CraneScale: fast scanner error: $error');
+        _fastScannerErrorFlag = true;
+        _fastScanActive = false;
+        _retryOrFallback();
+      },
+    );
+
+    _fastScanActive = true;
+    await _fastScanner!.startTracking(deviceId);
+
+    if (!_fastScannerErrorFlag) {
+      if (_state == ScaleConnectionState.connecting) {
+        _state = ScaleConnectionState.connected;
+        debugPrint('CraneScale: fast scanner active, state -> connected');
+      }
+      notifyListeners();
+      _resetDataTimeout();
+    }
+  }
+
+  void _resetDataTimeout() {
+    _dataTimeoutTimer?.cancel();
+    if (_state == ScaleConnectionState.connected && !_isSimulated) {
+      _dataTimeoutTimer = Timer(_dataTimeout, () {
+        debugPrint('CraneScale: data timeout after ${_dataTimeout.inSeconds}s');
+        if (_retryPending) {
+          debugPrint('CraneScale: retry already pending, extending timeout');
+          _resetDataTimeout();
+          return;
+        }
+        if (_fastScanActive) {
+          debugPrint('CraneScale: fast scanner silent failure, triggering retry');
+          _handleFastScannerSilentFailure();
+        } else {
+          debugPrint('CraneScale: no force data, disconnecting');
+          _lastError = 'Lost connection to the scale (no data).';
+          _handleDisconnect();
+          startScan();
+        }
+      });
+    }
+  }
+
+  void _handleFastScannerSilentFailure() {
+    _fastScanActive = false;
+    _retryOrFallback();
+  }
+
+  void _retryOrFallback() {
+    if (_retryPending) return;
+
+    _fastScanner?.dispose();
+    _fastScanner = null;
+
+    if (_fastScannerRetryCount < _maxFastScannerRetries) {
+      _retryPending = true;
+      _fastScannerRetryCount++;
+      debugPrint(
+          'CraneScale: scheduling fast scanner retry $_fastScannerRetryCount/$_maxFastScannerRetries');
+      _retryTimer = Timer(_fastScannerRetryDelay, () async {
+        _retryPending = false;
+        if (_connectingDeviceId != null) {
+          await _startFastScanner(_connectingDeviceId!);
+        }
+      });
+    } else {
+      debugPrint('CraneScale: fast scanner retries exhausted, disconnecting');
+      _lastError = 'Lost connection to the scale after several retries.';
       _handleDisconnect();
     }
   }
@@ -241,12 +381,17 @@ class CraneScaleService extends ChangeNotifier {
   }
 
   Future<void> disconnect() async {
-    _handleDisconnect();
+    await _handleDisconnect();
+    startScan();
   }
 
   Future<void> connectSimulated() async {
+    _retryTimer?.cancel();
+    _retryPending = false;
+    _connectingDeviceId = null;
+    _connectTimeoutTimer?.cancel();
     await stopScan();
-    _handleDisconnect(); // clear real connection
+    await _handleDisconnect();
     _isSimulated = true;
     _state = ScaleConnectionState.connected;
     _lastError = null;
@@ -263,17 +408,27 @@ class CraneScaleService extends ChangeNotifier {
     }
   }
 
-  void _handleDisconnect() {
+  Future<void> _handleDisconnect() async {
+    _retryTimer?.cancel();
+    _retryPending = false;
+    _connectingDeviceId = null;
+    _fastScanner?.dispose();
+    _fastScanner = null;
+    _fastScanActive = false;
     _connectedDevice = null;
     _isSimulated = false;
     _state = ScaleConnectionState.disconnected;
     _currentForce = 0;
     _scanTimeoutTimer?.cancel();
     _connectTimeoutTimer?.cancel();
+    _dataTimeoutTimer?.cancel();
+    _isReconnecting = false;
+    notifyListeners();
     if (_isScanning) {
       _isScanning = false;
-      unawaited(UniversalBle.stopScan());
+      try {
+        await UniversalBle.stopScan();
+      } catch (_) {}
     }
-    notifyListeners();
   }
 }

@@ -319,7 +319,7 @@ class _ActiveWorkoutPageState extends State<ActiveWorkoutPage> {
         actionValue = '${controller.remainingSetSeconds}s';
       } else {
         actionLabel = 'Target';
-        actionValue = '${entry?.reps ?? 0} Reps';
+        actionValue = '${controller.completedReps}/${entry?.reps ?? 0} Reps';
       }
     } else if (phase == SessionPhase.resting) {
       actionLabel = 'Rest';

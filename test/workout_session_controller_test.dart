@@ -180,6 +180,108 @@ void main() {
     });
   });
 
+  group('rep counting', () {
+    WorkoutSessionController makeRepsController({int reps = 3, int rest = 0}) {
+      return makeController(
+        workout: Workout(
+          id: 'w1',
+          name: 'W',
+          entries: [
+            makeEntry(
+              mode: ExerciseMode.reps,
+              reps: reps,
+              durationSeconds: null,
+              restSeconds: rest,
+            ),
+          ],
+        ),
+      );
+    }
+
+    test('a pull-release cycle counts one rep and auto-completes the set', () {
+      final controller = makeRepsController(reps: 2);
+      controller.start(t0);
+
+      // Set starts when the threshold is crossed.
+      controller.onForceChanged(30, t0);
+      expect(controller.phase, SessionPhase.activeSet);
+      expect(controller.completedReps, 0);
+
+      // First rep: release below the release threshold (10 ~/ 2 = 5).
+      controller.onForceChanged(2, at(1));
+      expect(controller.completedReps, 1);
+      expect(controller.phase, SessionPhase.activeSet);
+
+      // Second rep: pull again, then release -> planned reps reached.
+      controller.onForceChanged(30, at(2));
+      controller.onForceChanged(2, at(3));
+      expect(controller.completedReps, 2);
+      // restSeconds == 0 and single set -> workout finished.
+      expect(controller.phase, SessionPhase.finished);
+    });
+
+    test('wobble above the release threshold does not double count', () {
+      final controller = makeRepsController(reps: 5);
+      controller.start(t0);
+      controller.onForceChanged(30, t0);
+
+      // Small dips that stay above the release threshold are not reps.
+      controller.onForceChanged(8, at(1));
+      controller.onForceChanged(30, at(2));
+      controller.onForceChanged(6, at(3));
+      controller.onForceChanged(30, at(4));
+      expect(controller.completedReps, 0);
+
+      // One real release.
+      controller.onForceChanged(1, at(5));
+      expect(controller.completedReps, 1);
+    });
+
+    test('manual completion works before planned reps are reached', () {
+      final controller = makeRepsController(reps: 5);
+      controller.start(t0);
+      controller.onForceChanged(30, t0);
+      controller.onForceChanged(2, at(1));
+      expect(controller.completedReps, 1);
+
+      controller.completeCurrentSet(at(2));
+      expect(controller.phase, SessionPhase.finished);
+      expect(controller.setLogs.single.plannedReps, 5);
+    });
+
+    test('rep state resets for the next set', () {
+      final controller = makeController(
+        workout: Workout(
+          id: 'w1',
+          name: 'W',
+          entries: [
+            makeEntry(
+              sets: 2,
+              mode: ExerciseMode.reps,
+              reps: 1,
+              durationSeconds: null,
+              restSeconds: 0,
+            ),
+          ],
+        ),
+      );
+      controller.start(t0);
+
+      // Set 1: one rep completes it.
+      controller.onForceChanged(30, t0);
+      controller.onForceChanged(2, at(1));
+      expect(controller.phase, SessionPhase.waitingForForce);
+      expect(controller.currentSet, 2);
+      expect(controller.completedReps, 0);
+
+      // Set 2: same flow finishes the workout.
+      controller.onForceChanged(30, at(2));
+      controller.onForceChanged(2, at(3));
+      expect(controller.phase, SessionPhase.finished);
+      expect(controller.setLogs, hasLength(2));
+    });
+  });
+
   group('timed set completion', () {
     test('force drop during timed set does not pause the timer', () {
       final controller = makeController(

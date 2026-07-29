@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
@@ -17,16 +19,33 @@ class ForceChart extends StatelessWidget {
     this.showTargetArea = true,
   });
 
+  double _computeMaxY() {
+    double dataMax = 0;
+    if (dataPoints.isNotEmpty) {
+      dataMax = dataPoints.map((s) => s.y).reduce(max);
+    }
+    final double targetTop = targetMaxForce.toDouble();
+    double top = max(dataMax, targetTop);
+    if (top < 10) {
+      top = 10;
+    }
+    if (top <= targetTop && targetTop > 0) {
+      top = targetTop * 1.15;
+    }
+    return min(top, chartMaxForce.toDouble());
+  }
+
   @override
   Widget build(BuildContext context) {
     const double lowerYPadding = 2;
+    final double maxY = _computeMaxY();
 
     return Stack(
       children: [
         LineChart(
           LineChartData(
             minY: -lowerYPadding,
-            maxY: chartMaxForce.toDouble(),
+            maxY: maxY,
             clipData: FlClipData.all(),
             borderData: FlBorderData(show: false),
             rangeAnnotations: RangeAnnotations(
@@ -60,7 +79,7 @@ class ForceChart extends StatelessWidget {
                   showTitles: false,
                   reservedSize: 42,
                   getTitlesWidget: (value, meta) {
-                    if (value == chartMaxForce.toDouble()) {
+                    if (value == maxY) {
                       return Text(value.toInt().toString());
                     }
                     return const SizedBox.shrink();

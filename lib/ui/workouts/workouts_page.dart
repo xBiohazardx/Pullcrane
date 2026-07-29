@@ -109,6 +109,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'workouts_fab',
         onPressed: _openForm,
         child: const Icon(Icons.add),
       ),

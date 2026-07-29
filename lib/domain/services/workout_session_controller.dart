@@ -65,6 +65,12 @@ class WorkoutSessionController extends ChangeNotifier {
   ExerciseHand? suggestedSwitchHand;
   ExerciseHand? _pendingHandInSet;
 
+  /// Reps completed in the current set (rep-mode sets only). A rep counts
+  /// when force rises above the threshold and then drops below the release
+  /// threshold.
+  int completedReps = 0;
+  bool _repIsAboveThreshold = false;
+
   DateTime _now = DateTime.now();
   DateTime? _setStartedAt;
   DateTime? _setEndsAt;
@@ -116,6 +122,10 @@ class WorkoutSessionController extends ChangeNotifier {
   bool get isInTargetZone =>
       currentForce >= targetMinForceKg && currentForce <= targetMaxForceKg;
 
+  /// Force must drop below this after a pull for a rep to count (hysteresis
+  /// to avoid counting wobble as multiple reps).
+  int get repReleaseThresholdKg => max(config.forceThresholdKg ~/ 2, 2);
+
   int get remainingSetSeconds => _secondsUntil(_setEndsAt);
 
   int get remainingRestSeconds {
@@ -154,6 +164,24 @@ class WorkoutSessionController extends ChangeNotifier {
 
     if (_phase == SessionPhase.activeSet && currentForce > _setPeakForce) {
       _setPeakForce = currentForce;
+    }
+
+    if (_phase == SessionPhase.activeSet &&
+        currentEntry?.mode == ExerciseMode.reps) {
+      if (!_repIsAboveThreshold && currentForce >= config.forceThresholdKg) {
+        _repIsAboveThreshold = true;
+      } else if (_repIsAboveThreshold &&
+          currentForce < repReleaseThresholdKg) {
+        _repIsAboveThreshold = false;
+        completedReps++;
+      }
+
+      final int plannedReps = currentEntry?.reps ?? 0;
+      if (plannedReps > 0 && completedReps >= plannedReps) {
+        _completeCurrentSet(now);
+        notifyListeners();
+        return;
+      }
     }
 
     if (_phase == SessionPhase.waitingForForce) {
@@ -259,6 +287,10 @@ class WorkoutSessionController extends ChangeNotifier {
         return;
       }
       _setEndsAt = now.add(Duration(seconds: _plannedSetSeconds));
+    } else {
+      // The set starts above the threshold, so the next release counts
+      // as the first completed rep.
+      _repIsAboveThreshold = true;
     }
   }
 
@@ -439,6 +471,8 @@ class WorkoutSessionController extends ChangeNotifier {
     _restEndsAt = null;
     _setStartedAt = null;
     _setPeakForce = 0;
+    completedReps = 0;
+    _repIsAboveThreshold = false;
 
     if (entry == null) {
       _finish();
